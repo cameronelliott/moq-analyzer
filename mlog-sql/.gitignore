@@ -1,0 +1,10 @@
+node_modules/
+
+# DuckDB databases -- rebuilt from an mlog in under a second
+*.db
+*.db.wal
+
+# mlog traces. Kept out of history: large, and the contents describe a real
+# session. streaming.test.ts reads mlog.jsonl, so supply one locally to run it.
+*.jsonl
+*.jsonseq
