@@ -1,0 +1,12 @@
+{"qlog_version":"0.3","qlog_format":"JSON-SEQ","title":"moq-relay","description":"MoQ Transport events","trace":{"vantage_point":{"type":"server"},"event_schemas":["urn:ietf:params:qlog:events:loglevel","urn:ietf:params:qlog:events:moqt"]}}
+{"time":0.838866,"name":"moqt:control_message_parsed","data":{"event_type":"control_message_parsed","stream_id":0,"message_type":"client_setup","parameters":[["2","100"]]}}
+{"time":0.865491,"name":"moqt:control_message_created","data":{"event_type":"control_message_created","stream_id":0,"message_type":"server_setup","parameters":[["2","100"]]}}
+{"time":1.451318,"name":"moqt:control_message_parsed","data":{"event_type":"control_message_parsed","stream_id":0,"message_type":"subscribe","subscribe_id":0,"track_namespace":"/bbb","track_name":"0.mp4","parameters":[]}}
+{"time":2.458808,"name":"moqt:control_message_created","data":{"event_type":"control_message_created","stream_id":0,"message_type":"subscribe_ok","subscribe_id":0,"track_alias":0,"parameters":[],"track_extensions":[]}}
+{"time":3.489255,"name":"moqt:subgroup_header_created","data":{"event_type":"subgroup_header_created","stream_id":0,"header_type":"SubgroupIdExt","track_alias":0,"group_id":0,"publisher_priority":0,"subgroup_id":0}}
+{"time":3.523088,"name":"moqt:subgroup_object_created","data":{"event_type":"subgroup_object_created","stream_id":0,"group_id":0,"subgroup_id":0,"object_id":0,"extension_headers":[],"object_payload_length":1272}}
+{"time":4.554536,"name":"moqt:control_message_parsed","data":{"event_type":"control_message_parsed","stream_id":0,"message_type":"subscribe","subscribe_id":2,"track_namespace":"/bbb","track_name":"1.m4s","parameters":[]}}
+{"time":5.052739,"name":"moqt:control_message_parsed","data":{"event_type":"control_message_parsed","stream_id":0,"message_type":"subscribe","subscribe_id":4,"track_namespace":"/bbb","track_name":"2.m4s","parameters":[]}}
+{"time":6.381809,"name":"moqt:control_message_created","data":{"event_type":"control_message_created","stream_id":0,"message_type":"subscribe_ok","subscribe_id":2,"track_alias":2,"parameters":[],"track_extensions":[]}}
+{"time":8.113666,"name":"moqt:subgroup_header_created","data":{"event_type":"subgroup_header_created","stream_id":0,"header_type":"SubgroupIdExt","track_alias":2,"group_id":3,"publisher_priority":127,"subgroup_id":0}}
+{"time":8.135499,"name":"moqt:subgroup_object_created","data":{"event_type":"subgroup_object_created","stream_id":0,"group_id":3,"subgroup_id":0,"object_id":0,"extension_headers":[],"object_payload_length":11715}}

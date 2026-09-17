@@ -22,6 +22,10 @@ including script, so the caller resolves the paths:
 
     myload.sh                   loads mlog.jsonl into a fresh t.db
 
+    fixtures/vanilla-stock.mlog first 12 lines of a stock moq-rs relay mlog:
+                                no reference_time, stream_id 0 everywhere.
+                                guards.test.ts proves the loader refuses it.
+
 Tests are `bun test`. streaming.test.ts reads mlog.jsonl, which is gitignored --
 supply one locally to run it.
 

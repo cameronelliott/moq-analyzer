@@ -25,6 +25,20 @@ SELECT
 FROM raw
 WHERE j ->> '$.name' IS NOT NULL;
 
+-- Refuse a stock-moq-rs capture before any INSERT. Stock writes stream_id 0 on
+-- every subgroup header, so objects cannot be tied to a group. The primary key
+-- on subgroup_stream would reject it anyway, but as "duplicate key", which reads
+-- as a loader bug; naming the real cause here is the whole point.
+SELECT error('unsupported capture: every subgroup header carries the same stream_id'
+             || ' (stock moq-rs writes 0 for all).'
+             || ' Record with a relay build that plumbs real QUIC stream ids.')
+FROM (
+    SELECT count(*) AS headers, count(DISTINCT d ->> '$.stream_id') AS ids
+    FROM ev
+    WHERE name IN ('moqt:subgroup_header_parsed', 'moqt:subgroup_header_created')
+)
+WHERE headers > 1 AND ids = 1;
+
 -- Only the chunk carrying the mlog header inserts this; the rest are no-ops.
 INSERT INTO trace
 SELECT

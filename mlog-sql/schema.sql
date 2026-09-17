@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS trace (
     title          VARCHAR,
     description    VARCHAR,
     vantage_point  VARCHAR,
-    reference_time TIMESTAMPTZ,
+    -- NOT NULL is the input contract: without it every wall_time is NULL and a
+    -- chart draws nothing, or worse, draws relative times as if they were wall.
+    reference_time TIMESTAMPTZ NOT NULL,
     time_format    VARCHAR,
     flush_policy   VARCHAR,
     qlog_version   VARCHAR,
