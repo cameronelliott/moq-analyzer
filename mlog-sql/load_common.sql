@@ -29,9 +29,14 @@ WHERE j ->> '$.name' IS NOT NULL;
 -- every subgroup header, so objects cannot be tied to a group. The primary key
 -- on subgroup_stream would reject it anyway, but as "duplicate key", which reads
 -- as a loader bug; naming the real cause here is the whole point.
+-- Wrapped in a CTAS rather than left as a bare SELECT: a zero-row SELECT still
+-- prints its column header, and that header is the whole error() expression, so
+-- every healthy load announced what looked like a failure. CTAS prints nothing
+-- on success and still evaluates error() when the guard matches.
+CREATE OR REPLACE TEMP TABLE capture_guard AS
 SELECT error('unsupported capture: every subgroup header carries the same stream_id'
              || ' (stock moq-rs writes 0 for all).'
-             || ' Record with a relay build that plumbs real QUIC stream ids.')
+             || ' Record with a relay build that plumbs real QUIC stream ids.') AS abort
 FROM (
     SELECT count(*) AS headers, count(DISTINCT d ->> '$.stream_id') AS ids
     FROM ev
