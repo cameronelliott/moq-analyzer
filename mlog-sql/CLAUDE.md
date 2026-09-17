@@ -37,3 +37,4 @@ supply one locally to run it.
 - trace_id identifies a trace; cid is just an optional connection id recorded on the trace row.
 - these are mlog files. the header shape was inherited from qlog, and that is all
   qlog about them -- so qlog_version/qlog_format keep their names, nothing else says qlog.
+- duplicate prevention deferred until streaming ships; only chunked feeding can duplicate rows, and a PK on subgroup_object costs 7.6x db size vs 0.21s to run test-duplicated-mlog.sql.
