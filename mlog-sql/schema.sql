@@ -1,4 +1,6 @@
--- moq-rs mlog -> DuckDB. Idempotent; safe to re-run.
+-- moq-rs mlog -> DuckDB. Idempotent; safe to re-run: tables are IF NOT EXISTS,
+-- views are OR REPLACE so a re-run updates a stale definition rather than
+-- silently keeping it, and shape_baseline is rewritten from this file each time.
 --
 -- Types are VARCHAR rather than ENUM for message_type/header_type/direction:
 -- moq-rs is a moving target, and a new message type should land in the table,
@@ -125,9 +127,6 @@ INSERT INTO shape_baseline (name, fingerprint) VALUES
     ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":[["VARCHAR"]],"track_extensions":["NULL"]}'),
     ('moqt:subgroup_header_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","header_type":"VARCHAR","track_alias":"UBIGINT","group_id":"UBIGINT","publisher_priority":"UBIGINT","subgroup_id":"UBIGINT"}'),
     ('moqt:subgroup_object_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}');
-
--- OR REPLACE, not IF NOT EXISTS: re-running this file should update a view
--- definition, not silently keep the old one.
 
 -- Advisory only. Every row is a warning, never a failure: the load that produced
 -- it has already committed, and nothing downstream consults this. An operator
