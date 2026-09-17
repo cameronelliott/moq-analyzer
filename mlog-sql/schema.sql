@@ -100,8 +100,64 @@ CREATE TABLE IF NOT EXISTS shape (
     PRIMARY KEY (trace_id, name, fingerprint)
 );
 
+-- What moq-rs is expected to emit, as opposed to `shape`, which records what a
+-- trace actually contained. A shape observed during a load and not listed here
+-- is drift.
+--
+-- This catches what `unconsumed` cannot. A field that merely changes type --
+-- stream_id going from a number to a string -- leaves the key set identical, so
+-- nothing is unconsumed and the loader would otherwise say nothing at all.
+--
+-- Rewritten from this file on every run, so the checked-in list is the only
+-- source of truth and a removed entry really disappears. To bless a new shape,
+-- paste the fingerprint that shape_drift reports into the list below; the git
+-- history of these rows is then the record of when moq-rs changed what it emits.
+CREATE TABLE IF NOT EXISTS shape_baseline (
+    name        VARCHAR,
+    fingerprint VARCHAR,
+    PRIMARY KEY (name, fingerprint)
+);
+
+DELETE FROM shape_baseline;
+
+INSERT INTO shape_baseline (name, fingerprint) VALUES
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_namespace":"VARCHAR","track_name":"VARCHAR","parameters":["NULL"]}'),
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":[["VARCHAR"]],"track_extensions":["NULL"]}'),
+    ('moqt:subgroup_header_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","header_type":"VARCHAR","track_alias":"UBIGINT","group_id":"UBIGINT","publisher_priority":"UBIGINT","subgroup_id":"UBIGINT"}'),
+    ('moqt:subgroup_object_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}');
+
 -- OR REPLACE, not IF NOT EXISTS: re-running this file should update a view
 -- definition, not silently keep the old one.
+
+-- Advisory only. Every row is a warning, never a failure: the load that produced
+-- it has already committed, and nothing downstream consults this. An operator
+-- reads it, decides whether it matters, and either carries on or reports it.
+--
+-- Two independent signals, because neither catches the other:
+--   * a key the loader does not read, which lands nowhere and is lost
+--   * a shape missing from shape_baseline, which catches a field that merely
+--     changed type -- the key set is unchanged there, so unconsumed is empty
+--
+-- load_common.sql selects this at the end of a file load. It is also worth
+-- querying directly against an existing database, across every trace at once.
+CREATE OR REPLACE VIEW shape_drift AS
+SELECT
+    s.trace_id,
+    s.name,
+    CASE
+        WHEN b.fingerprint IS NULL AND len(s.unconsumed) > 0
+            THEN 'shape not in baseline, and these keys are not read: '
+                 || array_to_string(s.unconsumed, ', ')
+        WHEN b.fingerprint IS NULL
+            THEN 'shape not in baseline'
+        ELSE 'keys present but not read: ' || array_to_string(s.unconsumed, ', ')
+    END           AS warning,
+    s.n           AS lines,
+    s.first_time_us,
+    s.fingerprint  -- paste into shape_baseline above to bless it
+FROM shape s
+LEFT JOIN shape_baseline b USING (name, fingerprint)
+WHERE b.fingerprint IS NULL OR len(s.unconsumed) > 0;
 
 -- The workhorse. Puts back what normalisation took out, at no storage cost:
 -- group/subgroup from the stream header, track name from the subscribe, and

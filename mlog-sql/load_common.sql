@@ -169,11 +169,14 @@ ON CONFLICT (trace_id, name, fingerprint) DO UPDATE SET
 
 COMMIT;
 
--- Drift report: empty means every key in the log is accounted for. Suppressed
--- for streamed chunks, which would otherwise print it once per chunk; those
--- callers query `shape` once at the end instead.
-SELECT name, unconsumed, n AS lines, first_time_us
-FROM shape
+-- Drift report. No rows means every shape in the log matched the baseline and
+-- every key was read. Any row is advisory: the ingest above has already
+-- committed, so this never blocks a load -- it is there for an operator to read
+-- and judge.
+--
+-- Suppressed for streamed chunks, which would otherwise print it once per chunk;
+-- those callers query shape_drift once at the end instead.
+SELECT name, warning, lines, first_time_us, fingerprint
+FROM shape_drift
 WHERE trace_id = getvariable('trace_id')::USMALLINT
-  AND len(unconsumed) > 0
   AND getvariable('lines') IS NULL;

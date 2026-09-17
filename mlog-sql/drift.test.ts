@@ -212,6 +212,10 @@ test("a field that changes type produces a second shape", () => {
     // stream_id is a key the loader does read, so this is not an unconsumed key.
     // Only the fingerprint catches it -- which is why key-set diffing is not enough.
     for (const s of shapes) expect(s.unconsumed).toEqual([]);
+
+    // and with nothing unconsumed, the baseline is the only thing that can warn
+    expect(r.report).toContain("shape not in baseline");
+    expect(r.report).toContain('"stream_id":"VARCHAR"');
 });
 
 test("a dropped field produces a second shape", () => {
@@ -251,6 +255,29 @@ test("a heterogeneous array does not abort the load", () => {
     expect(r.stderr).toBe("");
     expect(r.ok).toBe(true);
     expect(r.objects).toBe(2);
+});
+
+test("drift is a warning, not a failure -- the trace still loads", () => {
+    // an operator has to be able to read the warning, judge it, and carry on;
+    // a shape they have not blessed must never cost them the load
+    const r = run([...clean(), object(5, 7, 1, { stream_id: "7" })]);
+
+    expect(r.ok).toBe(true);
+    expect(r.stderr).toBe("");
+    expect(r.report).toContain("shape not in baseline");
+    expect(r.objects).toBe(2);
+});
+
+test("a baselined shape is reported only for unread keys, not for itself", () => {
+    // clean() is entirely baselined, so a single new key is the only warning --
+    // the other four shapes must stay silent rather than all being flagged
+    const r = run([...clean(), object(5, 7, 1, { object_status: 1 })]);
+    expect(r.ok).toBe(true);
+
+    const warned = r.report.split("\n").filter((l) => l.includes("moqt:"));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("subgroup_object_parsed");
+    expect(r.report).toContain("object_status");
 });
 
 test("RFC 7464 record separators load identically to plain lines", () => {
