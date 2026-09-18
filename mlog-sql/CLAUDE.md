@@ -49,6 +49,15 @@ supply one locally to run it.
   ATTACH -- a view resolves against its own database's tables.
 - `hop` is the one place the cross-trace join is written. Hand-rolling it is how
   the above goes wrong silently. `dwell` is built from a pair of hops.
+- no clock table. No mlog records clock quality, and it generally will not be
+  available, so `trust` counts what the logs show and says nothing it cannot
+  count. `negative_hops` is the one clock signal and it is one-way: nonzero
+  proves disagreement, zero proves nothing.
+- `trust.lost` vs `trust.outside_window` is the distinction that keeps a chart
+  honest. Their sum is not loss: the relay has ~750 unjoined sends per
+  subscriber in real-6pop, every one of them after that subscriber's log
+  stopped. An object counts as lost only if it was sent between the first and
+  last join on its connection, when both ends were demonstrably recording.
 - no role column. `vantage_point` already carries it: client->server hops are the
   publisher's leg, server->client hops the subscribers'. Assumes one relay at the
   server end of every connection -- the v1 capture exactly. A chained relay would

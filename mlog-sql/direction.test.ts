@@ -378,6 +378,97 @@ test("a capture with no relay has hops but no dwell", () => {
     }
 });
 
+/** A sender/receiver pair on one connection, for the trust tests below. */
+function pairedCapture(dir: string, tag: string,
+                       sends: [number, number][], recvs: [number, number][]) {
+    const sender = writeLog(dir, `${tag}-s.jsonl`, header("client"), [
+        subscribe(1, 5, "/bbb", "1.m4s"), subscribeOk(2, 5, 5),
+        subgroupHeader("created", 9, 2, 5, 7),
+        ...sends.map(([t, id]) => object("created", t, 2, 7, id)),
+    ]);
+    const receiver = writeLog(dir, `${tag}-r.jsonl`, header("server"), [
+        subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+        subgroupHeader("parsed", 49, 2, 4, 7),
+        ...recvs.map(([t, id]) => object("parsed", t, 2, 7, id)),
+    ]);
+    const db = join(dir, `${tag}.db`);
+    const r = loadInto(db, [{ log: sender, cid: "c1" }, { log: receiver, cid: "c1" }]);
+    return { db, ok: r.ok };
+}
+
+type Trust = { sent: number; received: number; joined: number;
+               lost: number; outside_window: number };
+
+const trustOf = (db: string) => query<Trust>(db,
+    `select sent::int as sent, received::int as received, joined::int as joined,
+            lost::int as lost, outside_window::int as outside_window from trust`)[0]!;
+
+test("an object dropped mid-run counts as lost", () => {
+    const dir = tmp("mlog-trust-lost-");
+    try {
+        // three sent; the middle one never arrives, and the run continues after it
+        const { db, ok } = pairedCapture(dir, "lost",
+            [[10, 0], [20, 1], [30, 2]], [[60, 0], [80, 2]]);
+        expect(ok).toBe(true);
+
+        expect(trustOf(db)).toEqual({
+            sent: 3, received: 2, joined: 2, lost: 1, outside_window: 0,
+        });
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("objects sent after the receiver stopped recording are not loss", () => {
+    const dir = tmp("mlog-trust-tail-");
+    try {
+        // same three sent, but the receiver's log ends after the first
+        const { db, ok } = pairedCapture(dir, "tail",
+            [[10, 0], [20, 1], [30, 2]], [[60, 0]]);
+        expect(ok).toBe(true);
+
+        // two did not join, but nothing shows the network dropped them
+        expect(trustOf(db)).toEqual({
+            sent: 3, received: 1, joined: 1, lost: 0, outside_window: 2,
+        });
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("a clean connection reports no loss and no orphans", () => {
+    const dir = tmp("mlog-trust-clean-");
+    try {
+        const { db, ok } = pairedCapture(dir, "clean",
+            [[10, 0], [20, 1], [30, 2]], [[60, 0], [70, 1], [80, 2]]);
+        expect(ok).toBe(true);
+
+        expect(trustOf(db)).toEqual({
+            sent: 3, received: 3, joined: 3, lost: 0, outside_window: 0,
+        });
+        expect(query<{ n: number }>(db,
+            "select negative_hops::int as n from trust")[0]!.n).toBe(0);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("a receiver clock behind the sender's shows up as a negative hop", () => {
+    const dir = tmp("mlog-trust-neg-");
+    try {
+        // receiver decodes at t=5 what the sender built at t=10: impossible
+        // without clock disagreement, so the count is evidence, not a guess
+        const { db, ok } = pairedCapture(dir, "neg", [[10, 0]], [[5, 0]]);
+        expect(ok).toBe(true);
+
+        expect(query<{ joined: number; neg: number }>(db,
+            "select joined::int as joined, negative_hops::int as neg from trust"))
+            .toEqual([{ joined: 1, neg: 1 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test("loading one file twice into one database is refused", () => {
     const dir = tmp("mlog-dir-dup-");
     try {

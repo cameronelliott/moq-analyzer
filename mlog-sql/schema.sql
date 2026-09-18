@@ -302,6 +302,72 @@ JOIN hop hout   ON (hout.track_namespace, hout.track_name,
                     hin.group_id, hin.subgroup_id, hin.object_id)
 JOIN trace sout ON sout.trace_id = hout.send_trace AND sout.vantage_point = 'server';
 
+-- What a chart is allowed to claim, per connection. Everything here is counted
+-- from the mlogs; nothing is inferred.
+--
+-- The distinction that matters is `lost` against `outside_window`. Both are
+-- objects that did not join, and reporting their sum as loss is wrong. On the
+-- six-POP captures the relay has ~750 unjoined sends per subscriber, which looks
+-- like 1% loss and is not: every one falls after the last object that did join,
+-- because each subscriber's capture stopped about ten seconds before the
+-- relay's. Zero were interleaved. So an object only counts as lost if it was
+-- sent while both ends were demonstrably still recording -- between the first
+-- and last join on that connection. Outside that, the silence is the capture's,
+-- not the network's.
+--
+-- negative_hops is the only thing here that speaks to clocks, and it is one-way:
+-- nonzero proves the two clocks disagree by more than the transit between them,
+-- zero proves nothing. No mlog records clock quality, so a trust line must say
+-- so rather than implying a one-way leg has been verified. These captures were
+-- built to hold reference_time error under 10 us; that is a property of how they
+-- were made, recorded alongside them, and not something the data can show.
+CREATE OR REPLACE VIEW trust AS
+WITH win AS (
+    SELECT cid,
+           min(t_send) AS first_send, max(t_send) AS last_send,
+           min(t_recv) AS first_recv, max(t_recv) AS last_recv,
+           count(*)                        AS joined,
+           count(*) FILTER (WHERE us < 0)  AS negative_hops
+    FROM hop GROUP BY cid
+),
+obj AS (
+    SELECT t.cid, t.vantage_point, o.direction, o.wall_time,
+           o.track_namespace, o.track_name, o.group_id, o.subgroup_id, o.object_id
+    FROM object o JOIN trace t USING (trace_id)
+),
+unjoined AS (
+    SELECT o.cid, o.direction, o.wall_time
+    FROM obj o
+    WHERE NOT EXISTS (
+        SELECT 1 FROM hop h
+        WHERE h.cid = o.cid
+          AND (h.track_namespace, h.track_name,
+               h.group_id, h.subgroup_id, h.object_id)
+            = (o.track_namespace, o.track_name,
+               o.group_id, o.subgroup_id, o.object_id))
+)
+SELECT
+    o.cid,
+    any_value(o.vantage_point) FILTER (WHERE o.direction = 'created') AS sender_is,
+    count(*) FILTER (WHERE o.direction = 'created')                   AS sent,
+    count(*) FILTER (WHERE o.direction = 'parsed')                    AS received,
+    coalesce(any_value(w.joined), 0)                                  AS joined,
+    -- sent while both ends were still recording, and never seen to arrive
+    (SELECT count(*) FROM unjoined u
+      WHERE u.cid = o.cid AND u.direction = 'created'
+        AND u.wall_time BETWEEN any_value(w.first_send) AND any_value(w.last_send))
+                                                                      AS lost,
+    -- unjoined only because one log had already stopped, or had not started
+    (SELECT count(*) FROM unjoined u
+      WHERE u.cid = o.cid
+        AND NOT (u.wall_time BETWEEN any_value(w.first_send) AND any_value(w.last_send)))
+                                                                      AS outside_window,
+    coalesce(any_value(w.negative_hops), 0)                           AS negative_hops,
+    any_value(w.first_send) AS first_send,
+    any_value(w.last_send)  AS last_send
+FROM obj o LEFT JOIN win w USING (cid)
+GROUP BY o.cid;
+
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add
 -- ORDER BY time_us -- rather than for aggregation; prefer `object` for that.
