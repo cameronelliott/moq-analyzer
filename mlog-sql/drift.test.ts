@@ -52,6 +52,33 @@ const subscribeOk = (time: number, id: number, alias: number) => ({
     },
 });
 
+/** The newer request_id vocabulary, which this build emits beside subscribe_id. */
+const publishNamespace = (time: number, requestId: number) => ({
+    time,
+    name: "moqt:control_message_created",
+    data: {
+        event_type: "control_message_created",
+        stream_id: 0,
+        message_type: "publish_namespace",
+        request_id: requestId,
+        track_namespace: "/bbb",
+        parameters: [],
+    },
+});
+
+const requestOk = (time: number, requestId: number, kind: string) => ({
+    time,
+    name: "moqt:control_message_parsed",
+    data: {
+        event_type: "control_message_parsed",
+        stream_id: 0,
+        message_type: "request_ok",
+        request_id: requestId,
+        request_kind: kind,
+        parameters: [],
+    },
+});
+
 const header = (time: number, stream: number, alias: number, group: number) => ({
     time,
     name: "moqt:subgroup_header_parsed",
@@ -103,6 +130,15 @@ type Shape = {
     fingerprint: Record<string, unknown>;
 };
 
+type ControlMessage = {
+    message_type: string;
+    direction: string;
+    subscribe_id: number | null;
+    request_id: number | null;
+    request_kind: string | null;
+    track_namespace: string | null;
+};
+
 type RunOpts = {
     /** Prefix each line with the RFC 7464 record separator, as a .jsonseq does. */
     recordSeparators?: boolean;
@@ -142,6 +178,10 @@ function run(events: unknown[], opts: RunOpts = {}) {
             stderr: load.stderr.toString(),
             shape: ok ? query<Shape>("select name, n, unconsumed, fingerprint::JSON as fingerprint from shape order by n desc, name") : [],
             other: ok ? query<{ name: string }>("select name from event_other") : [],
+            control: ok ? query<ControlMessage>(
+                `select message_type, direction::VARCHAR as direction, subscribe_id,
+                        request_id, request_kind, track_namespace
+                 from control_message order by time_us`) : [],
             objects: ok
                 ? one(query<{ n: number }>("select count(*) as n from subgroup_object"), "objects").n
                 : 0,
@@ -177,6 +217,48 @@ test("a clean trace reports no drift", () => {
     for (const s of r.shape) expect(s.unconsumed).toEqual([]);
 
     // the drift report is the thing an operator reads; it must be quiet here
+    expect(r.report).not.toContain("moqt:");
+});
+
+test("request_id and request_kind are stored, not read past", () => {
+    // Before they had columns, a request_ok landed as a row with a message_type
+    // and nothing else: no id to tie it to the request it answered. The line was
+    // not kept in event_other either, since its event name was recognised -- so
+    // the only two fields carrying meaning were gone for good.
+    const r = run([...clean(), publishNamespace(5, 7), requestOk(6, 7, "publish_namespace")]);
+
+    expect(r.ok).toBe(true);
+    expect(shapeFor(r.shape, "control_message_created")
+        .concat(shapeFor(r.shape, "control_message_parsed"))
+        .flatMap((s) => s.unconsumed)).toEqual([]);
+
+    const byType = Object.fromEntries(r.control.map((c) => [c.message_type, c]));
+    expect(byType.publish_namespace).toEqual({
+        message_type: "publish_namespace", direction: "created",
+        subscribe_id: null, request_id: 7, request_kind: null, track_namespace: "/bbb",
+    });
+    // the id is what ties the acknowledgement back to what it acknowledged
+    expect(byType.request_ok).toEqual({
+        message_type: "request_ok", direction: "parsed",
+        subscribe_id: null, request_id: 7, request_kind: "publish_namespace",
+        track_namespace: null,
+    });
+
+    // and subscribe_id is untouched by any of it
+    expect(byType.subscribe?.subscribe_id).toBe(0);
+    expect(byType.subscribe?.request_id).toBe(null);
+});
+
+test("every control message shape in a real session is baselined", () => {
+    // The baseline was built from a trace holding only subscribe/subscribe_ok, so
+    // a whole session -- setup, publish_namespace, request_ok, unsubscribe -- used
+    // to report a dozen shapes as drift on every healthy load. A report that
+    // always fires is a report nobody reads.
+    const r = run([...clean(), publishNamespace(5, 7), requestOk(6, 7, "publish_namespace")]);
+
+    expect(r.ok).toBe(true);
+    // same convention as the clean-trace test above: the empty table frame is
+    // tolerated, an event name in the report is not
     expect(r.report).not.toContain("moqt:");
 });
 

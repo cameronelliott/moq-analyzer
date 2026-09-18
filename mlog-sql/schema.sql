@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS track (
     PRIMARY KEY (trace_id, track_alias)
 );
 
+-- subscribe_id and request_id are both request identifiers, kept apart on
+-- purpose. They are not one field under two names: in the six-POP captures
+-- subscribe/subscribe_ok/unsubscribe carry subscribe_id while
+-- publish_namespace/request_ok carry request_id, so one log holds both
+-- vocabularies. Merging them would name half the rows wrongly and erase the
+-- evidence that moq-rs is mid-transition -- which is what shape drift is for.
 CREATE TABLE IF NOT EXISTS control_message (
     trace_id        USMALLINT,
     time_us         BIGINT,
@@ -60,6 +66,8 @@ CREATE TABLE IF NOT EXISTS control_message (
     message_type    VARCHAR,
     stream_id       UINTEGER,
     subscribe_id    UINTEGER,
+    request_id      UINTEGER,
+    request_kind    VARCHAR,
     track_alias     UINTEGER,
     track_namespace VARCHAR,
     track_name      VARCHAR,
@@ -152,8 +160,30 @@ CREATE TABLE IF NOT EXISTS shape_baseline (
 DELETE FROM shape_baseline;
 
 INSERT INTO shape_baseline (name, fingerprint) VALUES
+    -- A control message's fingerprint is its exact key set, so every message type
+    -- has its own -- subscribe carries namespace and name, subscribe_ok carries
+    -- track_alias, unsubscribe carries neither, setup carries only parameters.
+    -- The first two lines below were all a single-trace baseline could know;
+    -- the rest came from a capture holding a whole session.
     ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_namespace":"VARCHAR","track_name":"VARCHAR","parameters":["NULL"]}'),
     ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":[["VARCHAR"]],"track_extensions":["NULL"]}'),
+    -- client_setup / server_setup
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","parameters":[["VARCHAR"]]}'),
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","parameters":[["VARCHAR"]]}'),
+    -- request_ok and publish_namespace: the newer request_id vocabulary, which
+    -- this build emits alongside the older subscribe_id one
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","request_id":"UBIGINT","request_kind":"VARCHAR","parameters":["NULL"]}'),
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","request_id":"UBIGINT","request_kind":"VARCHAR","parameters":["NULL"]}'),
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","request_id":"UBIGINT","track_namespace":"VARCHAR","parameters":["NULL"]}'),
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","request_id":"UBIGINT","track_namespace":"VARCHAR","parameters":["NULL"]}'),
+    -- subscribe_ok, with and without parameters
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":["NULL"],"track_extensions":["NULL"]}'),
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":["NULL"],"track_extensions":["NULL"]}'),
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":[["VARCHAR"]],"track_extensions":["NULL"]}'),
+    -- subscribe, seen from the receiving end
+    ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_namespace":"VARCHAR","track_name":"VARCHAR","parameters":["NULL"]}'),
+    -- unsubscribe
+    ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT"}'),
     ('moqt:subgroup_header_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","header_type":"VARCHAR","track_alias":"UBIGINT","group_id":"UBIGINT","publisher_priority":"UBIGINT","subgroup_id":"UBIGINT"}'),
     ('moqt:subgroup_object_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}'),
     -- The send side carries a fingerprint byte-identical to its parsed twin, which

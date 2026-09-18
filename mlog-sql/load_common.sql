@@ -109,6 +109,8 @@ SELECT
     d ->> '$.message_type',
     (d ->> '$.stream_id')::UINTEGER,
     (d ->> '$.subscribe_id')::UINTEGER,
+    (d ->> '$.request_id')::UINTEGER,
+    d ->> '$.request_kind',
     (d ->> '$.track_alias')::UINTEGER,
     d ->> '$.track_namespace',
     d ->> '$.track_name',
@@ -203,6 +205,7 @@ WITH per_line AS (
                 WHEN name IN ('moqt:control_message_created',
                               'moqt:control_message_parsed')
                     THEN ['event_type', 'stream_id', 'message_type', 'subscribe_id',
+                          'request_id', 'request_kind',
                           'track_namespace', 'track_name', 'track_alias',
                           'parameters', 'track_extensions']
                 WHEN name IN ('moqt:subgroup_header_created',
