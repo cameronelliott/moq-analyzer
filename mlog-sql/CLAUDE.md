@@ -37,12 +37,26 @@ supply one locally to run it.
 # the .sql files must run in duckdb-wasm
 
 These scripts target the browser as well as the CLI, so they stay plain SQL: no
-dot commands, no `INSTALL`/`LOAD`, nothing that assumes a terminal is reading the
-output. Verified that the whole load runs with `autoinstall_known_extensions` and
-`autoload_known_extensions` both off, so JSON and gzip `read_csv` are statically
-linked and wasm's default bundle covers them.
+dot commands, nothing that assumes a terminal is reading the output. wasm.test.ts
+runs the real engine -- duckdb-wasm ships a node entry point loading the same
+duckdb-eh.wasm the browser gets, so no bundler and no build step -- and compares
+a load against the CLI row for row.
 
-Two consequences worth knowing:
+Extensions are not statically linked in wasm the way they are in the CLI: both
+`icu` and `json` are fetched from extensions.duckdb.org on first use and cached
+under `~/.duckdb`. A CLI check with autoload disabled says nothing about the
+browser, so verify against wasm.
+
+`schema.sql` opens with `LOAD icu; SET TimeZone='UTC';`. ICU because wall_time
+adds an INTERVAL to a TIMESTAMPTZ, and because reading times in the relay's or a
+subscriber's zone is binning, not formatting, so it belongs in SQL. The CLI has
+it already; wasm fetches 1.8 MB gzipped from extensions.duckdb.org once and
+caches it. Loading explicitly matters -- an operator overload never autoloads, so
+`+ INTERVAL` otherwise fails to bind with a message naming neither ICU nor the
+fix. The setting reaches the session only; a reader who skips schema.sql sees
+their own zone, same instant.
+
+Three consequences worth knowing:
 
 - Session variables and the load's `BEGIN`/`COMMIT` are connection-scoped, so a
   whole load has to run on one connection. A caller that hands each statement to

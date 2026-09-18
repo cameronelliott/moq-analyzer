@@ -2,6 +2,37 @@
 -- views are OR REPLACE so a re-run updates a stale definition rather than
 -- silently keeping it, and shape_baseline is rewritten from this file each time.
 --
+-- ICU, and UTC. Both are deliberate.
+--
+-- ICU because wall_time adds an INTERVAL to a TIMESTAMPTZ, and because a capture
+-- spanning six sites will want times read in the relay's zone, or a subscriber's
+-- -- that is binning, not formatting, so it belongs in SQL rather than in the
+-- client. The CLI already has it. duckdb-wasm does not: it fetches
+-- icu.duckdb_extension.wasm (6.2 MB, 1.8 MB gzipped) from extensions.duckdb.org
+-- and caches it, so a browser pays that once, at startup rather than stalling on
+-- the first timezone call. Self-host it by setting custom_extension_repository.
+--
+-- Loading it here rather than leaving it to autoload is not optional: an
+-- operator overload never triggers autoload, so `reference_time + INTERVAL`
+-- fails to bind with a message naming neither ICU nor the fix.
+--
+-- UTC because the analyst's own zone is the one zone in this picture with no
+-- bearing on the data, and because these numbers get quoted -- two people
+-- reading one capture should see one timestamp. Without ICU a TIMESTAMPTZ
+-- already renders UTC, so this lines the CLI up with a browser rather than
+-- letting them diverge.
+--
+-- It reaches as far as the session, and no further: DuckDB keeps no per-database
+-- setting, so a reader who skips this file gets their own zone --
+--     duckdb t.db -f schema.sql -c "<query>"   -> 22:13:43.387162+00
+--     duckdb t.db               -c "<query>"   -> 15:13:43.387162-07
+-- the same instant either way. Running schema.sql first is the documented and
+-- idempotent path; an operator who wants local time says so instead:
+--     SET TimeZone = 'America/Los_Angeles';
+LOAD icu;
+SET TimeZone = 'UTC';
+
+--
 -- Types are VARCHAR rather than ENUM for message_type and header_type: moq-rs is
 -- a moving target, and a new message type should land in the table, not abort the
 -- load. DuckDB dictionary-compresses these anyway.

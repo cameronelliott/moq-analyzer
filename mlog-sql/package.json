@@ -7,6 +7,7 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
     "@types/bun": "latest",
     "typescript": "^7.0.2"
   }
