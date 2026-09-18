@@ -135,6 +135,34 @@ test("one subgroup header is not evidence of a stock capture", () => {
     expect(r.counts.subgroup_object).toBe(1);
 });
 
+test("a row cannot land under no trace at all", () => {
+    // getvariable() returns NULL for a name the connection never saw, so a
+    // statement run without its SET VARIABLE used to write orphans in silence.
+    // Barely reachable under `duckdb -f`; ordinary once these scripts are driven
+    // statement-by-statement from duckdb-wasm.
+    const dir = mkdtempSync(join(tmpdir(), "mlog-orphan-"));
+    try {
+        const db = join(dir, "orphan.db");
+        for (const insert of [
+            "INSERT INTO subgroup_object VALUES (getvariable('trace_id')::USMALLINT, 2, 0, 100, 1271, 0)",
+            "INSERT INTO event_other VALUES (getvariable('trace_id')::USMALLINT, 100, 'x', '{}')",
+        ]) {
+            const r = Bun.spawnSync([
+                "duckdb", db, "-f", join(REPO, "schema.sql"), "-c", insert,
+            ]);
+            expect(r.exitCode).not.toBe(0);
+            expect(r.stderr.toString()).toContain("NOT NULL constraint failed");
+        }
+
+        const q = Bun.spawnSync(["duckdb", "-json", db, "-c",
+            "select count(*) as n from subgroup_object"]);
+        // duckdb -json prints [{"n":N}]; the shape is fixed by the query above
+        expect((JSON.parse(q.stdout.toString()) as { n: number }[])[0]!.n).toBe(0);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test("a header without reference_time is refused", () => {
     // real stream ids, so only the missing clock can refuse this one
     const r = loadEvents(header(false), [

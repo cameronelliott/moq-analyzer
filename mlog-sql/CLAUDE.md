@@ -34,6 +34,23 @@ Tests are `bun test`. streaming.test.ts reads mlog.jsonl, which is gitignored --
 supply one locally to run it.
 
 
+# the .sql files must run in duckdb-wasm
+
+These scripts target the browser as well as the CLI, so they stay plain SQL: no
+dot commands, no `INSTALL`/`LOAD`, nothing that assumes a terminal is reading the
+output. Verified that the whole load runs with `autoinstall_known_extensions` and
+`autoload_known_extensions` both off, so JSON and gzip `read_csv` are statically
+linked and wasm's default bundle covers them.
+
+Two consequences worth knowing:
+
+- Session variables and the load's `BEGIN`/`COMMIT` are connection-scoped, so a
+  whole load has to run on one connection. A caller that hands each statement to
+  a fresh connection gets NULLs, not errors.
+- A zero-row `SELECT` still prints a table frame under the CLI. That is the CLI
+  rendering it, not the SQL: in wasm the caller just gets an empty result. So it
+  is not worth fixing with `.mode`, which would not run in the browser at all.
+
 # Cameron's decisions
 
 - json shape drift should be caught during regular production use. in the load*.sql files.

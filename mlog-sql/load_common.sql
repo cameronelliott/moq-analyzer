@@ -7,6 +7,19 @@
 --
 -- Every statement here is safe to run repeatedly against a growing trace, so a
 -- log can arrive as one file or as a stream of chunks and land identically.
+--
+-- ONE CONNECTION, whole file, in order. Session variables and the transaction
+-- below both belong to a connection, and `trace_id` is set here and then read by
+-- every statement after it. `duckdb -f` gives this for free. A caller driving
+-- duckdb-wasm must not spread these statements across a pool: getvariable()
+-- yields NULL for a name the connection never saw, and NULL is not an error.
+-- The NOT NULLs on trace_id in schema.sql are what turn that into a failure
+-- rather than a table full of rows belonging to no trace.
+--
+-- A caller that stops on the first exception must also ROLLBACK itself. The CLI
+-- keeps going after an error, so the COMMIT at the end fails and nothing lands;
+-- a browser caller that simply throws leaves the transaction open.
+--
 -- Expects:
 --   filename  what this trace is filed under, and its identity. The input file
 --             sets it: load_file.sql from the path it read, load_lines.sql from

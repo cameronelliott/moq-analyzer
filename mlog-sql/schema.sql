@@ -59,8 +59,14 @@ CREATE TABLE IF NOT EXISTS track (
 -- publish_namespace/request_ok carry request_id, so one log holds both
 -- vocabularies. Merging them would name half the rows wrongly and erase the
 -- evidence that moq-rs is mid-transition -- which is what shape drift is for.
+-- trace_id is NOT NULL here and on the other two keyless tables. getvariable()
+-- returns NULL for a name that was never set, so a statement run without its
+-- SET VARIABLE writes rows under no trace at all, and nothing notices. Barely
+-- reachable under `duckdb -f`, where one connection runs the file in order;
+-- ordinary in the browser, where a caller may hand statements to a connection
+-- that never saw the variable. The tables with primary keys get this for free.
 CREATE TABLE IF NOT EXISTS control_message (
-    trace_id        USMALLINT,
+    trace_id        USMALLINT NOT NULL,
     time_us         BIGINT,
     direction       direction, -- this endpoint built it | decoded one it received
     message_type    VARCHAR,
@@ -101,7 +107,7 @@ CREATE TABLE IF NOT EXISTS subgroup_stream (
 );
 
 CREATE TABLE IF NOT EXISTS subgroup_object (
-    trace_id        USMALLINT,
+    trace_id        USMALLINT NOT NULL,
     stream_id       UINTEGER,
     object_id       UINTEGER,
     time_us         BIGINT,
@@ -111,7 +117,7 @@ CREATE TABLE IF NOT EXISTS subgroup_object (
 
 -- Anything the loader does not recognise, kept verbatim rather than dropped.
 CREATE TABLE IF NOT EXISTS event_other (
-    trace_id USMALLINT,
+    trace_id USMALLINT NOT NULL,
     time_us  BIGINT,
     name     VARCHAR,
     data     JSON
