@@ -48,5 +48,9 @@ supply one locally to run it.
   the schema scopes a capture, so nothing has to remember to. Compare runs with
   ATTACH -- a view resolves against its own database's tables.
 - `hop` is the one place the cross-trace join is written. Hand-rolling it is how
-  the above goes wrong silently. Relay dwell is not a hop: it spans two
-  connections at one host and waits on deciding how role is known.
+  the above goes wrong silently. `dwell` is built from a pair of hops.
+- no role column. `vantage_point` already carries it: client->server hops are the
+  publisher's leg, server->client hops the subscribers'. Assumes one relay at the
+  server end of every connection -- the v1 capture exactly. A chained relay would
+  read as a publisher, since nothing in an mlog says two traces share a host, and
+  that is the capture that turns role from assumption into data.

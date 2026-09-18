@@ -267,6 +267,41 @@ JOIN object r ON r.trace_id = tr.trace_id
                   s.group_id, s.subgroup_id, s.object_id)
 WHERE s.direction = 'created';
 
+-- Relay dwell: the gap between the relay parsing an object on the way in and
+-- creating it again on the way out, once per outbound connection. Not a hop --
+-- it spans two connections at one host, so it is built from a pair of them.
+--
+-- Assumes one relay, sitting at the server end of every connection. That is the
+-- v1 capture exactly: one publisher, one relay, four subscribers. A chained
+-- relay would break it -- relay A is a client to relay B, so A's outbound trace
+-- reads as a publisher -- because nothing in an mlog says two traces are the
+-- same host. That is the capture that turns role from assumption into data.
+--
+-- On the six-POP captures the median is a sliver, 0.26-0.43 ms, and the mean is
+-- 1.4x to 15x that. Means sum to end-to-end and medians do not, so a per-leg
+-- composition bar has to be built from means.
+CREATE OR REPLACE VIEW dwell AS
+SELECT
+    hin.cid  AS in_cid,
+    hout.cid AS out_cid,
+    hin.track_namespace,
+    hin.track_name,
+    hin.group_id,
+    hin.subgroup_id,
+    hin.object_id,
+    hin.recv_trace AS relay_in_trace,
+    hout.send_trace AS relay_out_trace,
+    hin.t_recv  AS t_in,
+    hout.t_send AS t_out,
+    datediff('microsecond', hin.t_recv, hout.t_send) AS us
+FROM hop hin
+JOIN trace sin  ON sin.trace_id  = hin.send_trace  AND sin.vantage_point  = 'client'
+JOIN hop hout   ON (hout.track_namespace, hout.track_name,
+                    hout.group_id, hout.subgroup_id, hout.object_id)
+                 = (hin.track_namespace, hin.track_name,
+                    hin.group_id, hin.subgroup_id, hin.object_id)
+JOIN trace sout ON sout.trace_id = hout.send_trace AND sout.vantage_point = 'server';
+
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add
 -- ORDER BY time_us -- rather than for aggregation; prefer `object` for that.

@@ -303,6 +303,81 @@ test("one trace carrying both directions produces no hop with itself", () => {
     }
 });
 
+test("dwell is the relay's own two sides, across two connections", () => {
+    const dir = tmp("mlog-dwell-");
+    try {
+        // A whole path in miniature. The relay is two files, one per connection,
+        // and only vantage_point says which end of each it is.
+        const track = (id: number, alias: number) => [subscribe(1, id, "/bbb", "1.m4s"),
+                                                      subscribeOk(2, id, alias)];
+        const pub = writeLog(dir, "pub.jsonl", header("client"), [
+            ...track(5, 5),
+            subgroupHeader("created", 9, 2, 5, 7), object("created", 10, 2, 7, 0),
+        ]);
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("created", 61, 3, 4, 7), object("created", 62, 3, 7, 0),
+        ]);
+        const sub = writeLog(dir, "sub.jsonl", header("client"), [
+            ...track(4, 4),
+            subgroupHeader("parsed", 99, 3, 4, 7), object("parsed", 100, 3, 7, 0),
+        ]);
+
+        const db = join(dir, "path.db");
+        expect(loadInto(db, [
+            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+        ]).ok).toBe(true);
+
+        // two hops: publisher to relay, relay to subscriber
+        expect(query<{ cid: string; us: number }>(db,
+            "select cid, us::int as us from hop order by cid"))
+            .toEqual([{ cid: "c1", us: 50_000 }, { cid: "c2", us: 38_000 }]);
+
+        // and the relay's own transit between them
+        expect(query<{ in_cid: string; out_cid: string; us: number }>(db,
+            "select in_cid, out_cid, us::int as us from dwell"))
+            .toEqual([{ in_cid: "c1", out_cid: "c2", us: 2_000 }]);
+
+        // the three legs account for the whole path, with nothing left over
+        expect(query<{ total: number }>(db, `
+            select ((select us from hop where cid='c1')
+                  + (select us from dwell)
+                  + (select us from hop where cid='c2'))::int as total`))
+            .toEqual([{ total: 90_000 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("a capture with no relay has hops but no dwell", () => {
+    const dir = tmp("mlog-dwell-none-");
+    try {
+        const sender = writeLog(dir, "s.jsonl", header("client"), [
+            subscribe(1, 5, "/bbb", "1.m4s"), subscribeOk(2, 5, 5),
+            subgroupHeader("created", 9, 2, 5, 7), object("created", 10, 2, 7, 0),
+        ]);
+        const receiver = writeLog(dir, "r.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const db = join(dir, "norelay.db");
+        expect(loadInto(db, [
+            { log: sender, cid: "c1" }, { log: receiver, cid: "c1" },
+        ]).ok).toBe(true);
+
+        // one connection, so nothing was forwarded onward
+        expect(query<{ n: number }>(db, "select count(*) as n from hop")[0]!.n).toBe(1);
+        expect(query<{ n: number }>(db, "select count(*) as n from dwell")[0]!.n).toBe(0);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test("loading one file twice into one database is refused", () => {
     const dir = tmp("mlog-dir-dup-");
     try {
