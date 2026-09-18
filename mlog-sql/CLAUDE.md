@@ -17,6 +17,10 @@ including script, so the caller resolves the paths:
     duckdb t.db -f mlog-sql/schema.sql -c "<variables>" \
       -f mlog-sql/load_file.sql -f mlog-sql/load_common.sql
 
+`trace_id` is not an input: the caller names a file, the database assigns the
+integer. `load_file.sql` files under `src`; `load_lines.sql` requires
+`filename`, same value every chunk.
+
     test-duplicated-mlog.sql    audits an already-loaded database for
                                 double-inserted rows; no rows means clean
 

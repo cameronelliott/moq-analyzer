@@ -9,10 +9,10 @@
 -- one file cannot portably pull in the other.)
 --
 -- Expects:
---   src       path to read
---   trace_id  id to assign this trace (required)
+--   src       path to read. Also becomes trace.filename, which identifies the
+--             trace, so pass a path distinct enough to tell two captures apart --
+--             loading one file twice into one database is refused.
 --   cid       optional connection id, recorded on the trace row
---   src_name  optional; path to record in trace.source_file, defaults to src
 --
 -- To feed a stream of lines instead of a file, use load_lines.sql in place of
 -- this file.
@@ -55,3 +55,7 @@ END;
 -- load_common.sql prints the drift report when `lines` is unset, so clear any
 -- value left over from an earlier streamed load in the same session.
 SET VARIABLE lines = NULL;
+
+-- A file names itself. Assigned rather than defaulted, so a filename left over
+-- from an earlier load in the same session cannot leak into this one.
+SET VARIABLE filename = getvariable('src');

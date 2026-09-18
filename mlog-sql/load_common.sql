@@ -8,11 +8,11 @@
 -- Every statement here is safe to run repeatedly against a growing trace, so a
 -- log can arrive as one file or as a stream of chunks and land identically.
 -- Expects:
---   trace_id  id to assign this trace. Required -- trace.trace_id is the primary
---             key, so an unset trace_id fails the load rather than writing an
---             anonymous trace.
+--   filename  what this trace is filed under, and its identity. The input file
+--             sets it: load_file.sql from the path it read, load_lines.sql from
+--             the caller. trace_id is not an input -- the database assigns it and
+--             this script resolves it from filename below.
 --   cid       optional connection id, recorded on the trace row
---   src_name  optional; path to record in trace.source_file
 
 -- All or nothing: a failure partway through must not leave a half-loaded chunk.
 BEGIN TRANSACTION;
@@ -45,11 +45,13 @@ FROM (
 WHERE headers > 1 AND ids = 1;
 
 -- Only the chunk carrying the mlog header inserts this; the rest are no-ops.
-INSERT INTO trace
+-- Columns are named rather than positional so trace_id can take its DEFAULT.
+INSERT INTO trace (cid, filename, loaded_at, title, description, vantage_point,
+                   reference_time, time_format, flush_policy, qlog_version,
+                   qlog_format, event_schemas)
 SELECT
-    getvariable('trace_id')::USMALLINT,
     getvariable('cid'),
-    coalesce(getvariable('src_name'), getvariable('src')),
+    getvariable('filename'),
     now(),
     j ->> '$.title',
     j ->> '$.description',
@@ -62,6 +64,42 @@ SELECT
     list_transform((j -> '$.trace.event_schemas')::JSON[], lambda x: x ->> '$')
 FROM raw
 WHERE j ->> '$.qlog_version' IS NOT NULL;
+
+-- Resolve the surrogate for every statement below. A later chunk finds the row
+-- its header chunk inserted, so a streamed load keys on what a file load keys on.
+-- Erroring beats the old behaviour for a chunk fed ahead of its header: that
+-- wrote child rows under a trace_id with no parent, and said nothing.
+SET VARIABLE trace_id = (
+    SELECT coalesce(
+        (SELECT trace_id FROM trace WHERE filename = getvariable('filename')),
+        error('no trace row for "' || getvariable('filename') || '": feed the '
+              || 'chunk holding the mlog header first')::USMALLINT
+    )
+);
+
+-- One stream_id must not appear in both directions -- see the key note in
+-- schema.sql. That key would reject it anyway, but as "duplicate key", which
+-- reads as a loader bug; naming the cause is the point, as for the guard above.
+-- Checks this chunk against itself and against what the trace already holds.
+CREATE OR REPLACE TEMP TABLE direction_guard AS
+SELECT error('unsupported capture: stream_id ' || sid || ' carries both a sent and'
+             || ' a received subgroup header, so the stream cannot be attributed'
+             || ' to one end. Expected disjoint QUIC stream id spaces.') AS abort
+FROM (
+    SELECT sid FROM (
+        SELECT (d ->> '$.stream_id')::UINTEGER AS sid,
+               CASE WHEN name = 'moqt:subgroup_header_created'
+                    THEN 'created' ELSE 'parsed' END AS dir
+        FROM ev
+        WHERE name IN ('moqt:subgroup_header_created', 'moqt:subgroup_header_parsed')
+        UNION ALL
+        SELECT stream_id, direction::VARCHAR
+        FROM subgroup_stream
+        WHERE trace_id = getvariable('trace_id')::USMALLINT
+    )
+    GROUP BY sid
+    HAVING count(DISTINCT dir) > 1
+);
 
 INSERT INTO control_message
 SELECT
@@ -83,10 +121,13 @@ SELECT
 FROM ev
 WHERE name IN ('moqt:control_message_created', 'moqt:control_message_parsed');
 
+-- Both directions. A relay's own send side is half of every latency leg, so
+-- keeping only what arrived left the sent timestamps unreachable in event_other.
 INSERT INTO subgroup_stream
 SELECT
     getvariable('trace_id')::USMALLINT,
     (d ->> '$.stream_id')::UINTEGER,
+    CASE WHEN name = 'moqt:subgroup_header_created' THEN 'created' ELSE 'parsed' END,
     time_us,
     d ->> '$.header_type',
     (d ->> '$.track_alias')::UINTEGER,
@@ -94,7 +135,7 @@ SELECT
     (d ->> '$.subgroup_id')::UINTEGER,
     (d ->> '$.publisher_priority')::UTINYINT
 FROM ev
-WHERE name = 'moqt:subgroup_header_parsed'
+WHERE name IN ('moqt:subgroup_header_created', 'moqt:subgroup_header_parsed')
 ORDER BY time_us;
 
 -- Sorted on insert so DuckDB's zone maps can prune time ranges. Chunks arrive in
@@ -108,15 +149,16 @@ SELECT
     (d ->> '$.object_payload_length')::UINTEGER,
     json_array_length(d -> '$.extension_headers')::USMALLINT
 FROM ev
-WHERE name = 'moqt:subgroup_object_parsed'
+WHERE name IN ('moqt:subgroup_object_created', 'moqt:subgroup_object_parsed')
 ORDER BY time_us;
 
 INSERT INTO event_other
 SELECT getvariable('trace_id')::USMALLINT, time_us, name, d
 FROM ev
 WHERE name NOT IN (
-    'moqt:control_message_created', 'moqt:control_message_parsed',
-    'moqt:subgroup_header_parsed',   'moqt:subgroup_object_parsed'
+    'moqt:control_message_created',  'moqt:control_message_parsed',
+    'moqt:subgroup_header_created',  'moqt:subgroup_header_parsed',
+    'moqt:subgroup_object_created',  'moqt:subgroup_object_parsed'
 );
 
 -- track_alias is announced in subscribe_ok; the namespace and name come from the
@@ -163,10 +205,12 @@ WITH per_line AS (
                     THEN ['event_type', 'stream_id', 'message_type', 'subscribe_id',
                           'track_namespace', 'track_name', 'track_alias',
                           'parameters', 'track_extensions']
-                WHEN name = 'moqt:subgroup_header_parsed'
+                WHEN name IN ('moqt:subgroup_header_created',
+                              'moqt:subgroup_header_parsed')
                     THEN ['event_type', 'stream_id', 'header_type', 'track_alias',
                           'group_id', 'subgroup_id', 'publisher_priority']
-                WHEN name = 'moqt:subgroup_object_parsed'
+                WHEN name IN ('moqt:subgroup_object_created',
+                              'moqt:subgroup_object_parsed')
                     THEN ['event_type', 'stream_id', 'group_id', 'subgroup_id',
                           'object_id', 'extension_headers', 'object_payload_length']
                 ELSE json_keys(d)   -- unknown event: event_other keeps it whole

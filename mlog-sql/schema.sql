@@ -2,17 +2,33 @@
 -- views are OR REPLACE so a re-run updates a stale definition rather than
 -- silently keeping it, and shape_baseline is rewritten from this file each time.
 --
--- Types are VARCHAR rather than ENUM for message_type/header_type/direction:
--- moq-rs is a moving target, and a new message type should land in the table,
--- not abort the load. DuckDB dictionary-compresses these anyway.
+-- Types are VARCHAR rather than ENUM for message_type and header_type: moq-rs is
+-- a moving target, and a new message type should land in the table, not abort the
+-- load. DuckDB dictionary-compresses these anyway.
+--
+-- direction is the exception, and an ENUM. moq-rs never writes it: the loader
+-- synthesises it from which of a `_created`/`_parsed` event pair the line carried,
+-- and routes on an explicit list of names, so an unfamiliar suffix lands in
+-- event_other rather than becoming a third direction. Nothing moq-rs does can
+-- drift this column -- only a loader bug can, which is what the type catches.
+CREATE TYPE IF NOT EXISTS direction AS ENUM ('created', 'parsed');
 
 -- qlog_version and qlog_format keep their names because that is literally what
 -- the mlog header carries: the header shape was inherited from qlog, and nothing
 -- else about these files is qlog.
+CREATE SEQUENCE IF NOT EXISTS trace_id_seq START 1;
+
 CREATE TABLE IF NOT EXISTS trace (
-    trace_id       USMALLINT PRIMARY KEY,
+    -- Surrogate, assigned here rather than by the caller, and narrow because every
+    -- child table carries it on every row. Load order decides it, so it is stable
+    -- only within one database: anything outside must reference filename, not this.
+    trace_id       USMALLINT PRIMARY KEY DEFAULT nextval('trace_id_seq'),
     cid            VARCHAR,       -- optional connection id, supplied at load time
-    source_file    VARCHAR,
+    -- What identifies an mlog source, and the duplicate guard: loading one file
+    -- twice fails here rather than silently doubling every row. It catches a
+    -- repeated file, not a repeated chunk -- chunks are not individually
+    -- identified -- so test-duplicated-mlog.sql still has work to do.
+    filename       VARCHAR NOT NULL UNIQUE,
     loaded_at      TIMESTAMPTZ,
     title          VARCHAR,
     description    VARCHAR,
@@ -40,7 +56,7 @@ CREATE TABLE IF NOT EXISTS track (
 CREATE TABLE IF NOT EXISTS control_message (
     trace_id        USMALLINT,
     time_us         BIGINT,
-    direction       VARCHAR,   -- created (sent) | parsed (received)
+    direction       direction, -- this endpoint built it | decoded one it received
     message_type    VARCHAR,
     stream_id       UINTEGER,
     subscribe_id    UINTEGER,
@@ -53,9 +69,20 @@ CREATE TABLE IF NOT EXISTS control_message (
 
 -- One row per subgroup stream. group_id/subgroup_id/track_alias live here only;
 -- subgroup_object reaches them through stream_id.
+--
+-- direction lives here, not on the object: a subgroup stream is a QUIC
+-- unidirectional stream, so every object riding it inherits the stream's
+-- direction. The two directions get disjoint id spaces (client-initiated streams
+-- are 2 mod 4, server-initiated 3 mod 4) -- across 8,298 streams in the six-POP
+-- captures, no id appeared in both.
+--
+-- The key does not assume that, it enforces it: a capture reusing one id both
+-- ways fails at load rather than matching each object to two stream rows and
+-- doubling the `object` view. load_common.sql names the cause first.
 CREATE TABLE IF NOT EXISTS subgroup_stream (
     trace_id           USMALLINT,
     stream_id          UINTEGER,
+    direction          direction,
     time_us            BIGINT,
     header_type        VARCHAR,
     track_alias        UINTEGER,
@@ -128,7 +155,11 @@ INSERT INTO shape_baseline (name, fingerprint) VALUES
     ('moqt:control_message_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_namespace":"VARCHAR","track_name":"VARCHAR","parameters":["NULL"]}'),
     ('moqt:control_message_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","message_type":"VARCHAR","subscribe_id":"UBIGINT","track_alias":"UBIGINT","parameters":[["VARCHAR"]],"track_extensions":["NULL"]}'),
     ('moqt:subgroup_header_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","header_type":"VARCHAR","track_alias":"UBIGINT","group_id":"UBIGINT","publisher_priority":"UBIGINT","subgroup_id":"UBIGINT"}'),
-    ('moqt:subgroup_object_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}');
+    ('moqt:subgroup_object_parsed',  '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}'),
+    -- The send side carries a fingerprint byte-identical to its parsed twin, which
+    -- is why ingesting it took a column rather than a parser.
+    ('moqt:subgroup_header_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","header_type":"VARCHAR","track_alias":"UBIGINT","group_id":"UBIGINT","publisher_priority":"UBIGINT","subgroup_id":"UBIGINT"}'),
+    ('moqt:subgroup_object_created', '{"event_type":"VARCHAR","stream_id":"UBIGINT","group_id":"UBIGINT","subgroup_id":"UBIGINT","object_id":"UBIGINT","extension_headers":["NULL"],"object_payload_length":"UBIGINT"}');
 
 -- Advisory only. Every row is a warning, never a failure: the load that produced
 -- it has already committed, and nothing downstream consults this. An operator
@@ -161,13 +192,20 @@ LEFT JOIN shape_baseline b USING (name, fingerprint)
 WHERE b.fingerprint IS NULL OR len(s.unconsumed) > 0;
 
 -- The workhorse. Puts back what normalisation took out, at no storage cost:
--- group/subgroup from the stream header, track name from the subscribe, and
--- wall-clock time from the trace. LEFT joins so a log that missed its
--- subscribe_ok still shows its objects, with a null track_name.
+-- group/subgroup from the stream header, track name from the subscribe,
+-- direction from the stream, and wall-clock time from the trace. LEFT joins so a
+-- log that missed its subscribe_ok still shows its objects, with a null
+-- track_name.
+--
+-- direction is what makes a latency leg expressible: one object appears twice,
+-- `created` in the sender's log and `parsed` in the receiver's, and the gap
+-- between those wall_times is the leg. Join on (track_namespace, track_name,
+-- group_id, subgroup_id, object_id) -- track_alias does not survive the hop.
 CREATE OR REPLACE VIEW object AS
 SELECT
     o.trace_id,
     o.time_us,
+    s.direction,
     CASE WHEN tr.time_format = 'relative'
          THEN tr.reference_time + to_microseconds(o.time_us) END AS wall_time,
     t.track_namespace,
@@ -210,7 +248,7 @@ FROM (
     SELECT s.trace_id, s.time_us,
            CASE WHEN tr.time_format = 'relative'
                 THEN tr.reference_time + to_microseconds(s.time_us) END,
-           'subgroup_header_parsed', s.stream_id, t.track_name,
+           'subgroup_header_' || s.direction, s.stream_id, t.track_name,
            s.group_id, s.subgroup_id, NULL, NULL, NULL, NULL
     FROM subgroup_stream s
     LEFT JOIN track      t USING (trace_id, track_alias)
@@ -218,7 +256,7 @@ FROM (
 
     UNION ALL
     SELECT trace_id, time_us, wall_time,
-           'subgroup_object_parsed', stream_id, track_name,
+           'subgroup_object_' || direction, stream_id, track_name,
            group_id, subgroup_id, object_id, payload_length, NULL, NULL
     FROM object
 

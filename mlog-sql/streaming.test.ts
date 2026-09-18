@@ -50,7 +50,7 @@ function loadFile(db: string, log: string) {
     duck([
         db,
         "-f", join(REPO, "schema.sql"),
-        "-c", `set variable src='${log}'; set variable trace_id=1;`,
+        "-c", `set variable src='${log}';`,
         "-f", join(REPO, "load_file.sql"),
         "-f", join(REPO, "load_common.sql"),
     ]);
@@ -60,7 +60,7 @@ function loadFile(db: string, log: string) {
 function loadStream(db: string, lines: string[], chunkSize: number, srcName: string) {
     const sql = [
         `.read ${join(REPO, "schema.sql")}`,
-        `set variable trace_id=1; set variable src_name='${srcName}';`,
+        `set variable filename='${srcName}';`,
     ];
     for (let i = 0; i < lines.length; i += chunkSize) {
         // lines reach DuckDB as SQL text, so single quotes must be doubled

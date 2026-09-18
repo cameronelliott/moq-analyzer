@@ -71,7 +71,7 @@ function load(log: string) {
         const r = Bun.spawnSync([
             "duckdb", db,
             "-f", join(REPO, "schema.sql"),
-            "-c", `set variable src='${log}'; set variable trace_id=1;`,
+            "-c", `set variable src='${log}';`,
             "-f", join(REPO, "load_file.sql"),
             "-f", join(REPO, "load_common.sql"),
         ]);
