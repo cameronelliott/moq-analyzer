@@ -22,6 +22,17 @@
 -- include the mlog header line in the first chunk. The drift report is
 -- suppressed per chunk -- query `shape` once at the end instead.
 --
+-- `lines` arrives as SQL text, which bounds what this is good for. The caller
+-- doubles every quote, and the chunk is parsed as part of the statement, so a
+-- whole mlog fed this way becomes a statement of the same size -- 13 MB of log
+-- is a 13 MB SQL string. That is fine at chunk size and wrong at file size.
+--
+-- In a browser, reach for this only when chunks genuinely arrive as text and
+-- nothing is holding the bytes. When there are bytes -- a File, a fetch body, an
+-- ArrayBuffer -- register them and use load_file.sql instead, which needs no
+-- escaping and no copy into a statement. Several registered buffers accumulate
+-- into one trace by setting its `trace_name` to the same value for each.
+--
 -- Blank lines are dropped, so a trailing newline on a chunk is harmless.
 
 -- Checked before a line is read, because the failure is otherwise confusing: a

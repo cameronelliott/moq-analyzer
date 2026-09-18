@@ -9,13 +9,28 @@
 -- one file cannot portably pull in the other.)
 --
 -- Expects:
---   src       path to read. Also becomes trace.filename, which identifies the
---             trace, so pass a path distinct enough to tell two captures apart --
---             loading one file twice into one database is refused.
---   cid       optional connection id, recorded on the trace row
+--   src        what read_csv should open. A filesystem path under the CLI. In
+--              duckdb-wasm there is no filesystem, so it is the name a buffer was
+--              registered under -- registerFileBuffer, registerFileHandle or
+--              registerFileURL -- and nothing here touches the OS either way:
+--                  db.registerFileBuffer('sub1.mlog', bytes);
+--                  conn.query("SET VARIABLE src = 'sub1.mlog'");
+--              The name is arbitrary, but read_csv reads compression from its
+--              extension, so keep .gz on a gzipped buffer.
+--   trace_name optional; what to record as trace.filename instead of src. Only
+--              needed when src cannot serve as the trace's identity -- feeding
+--              one trace as several registered buffers, where src changes per
+--              chunk and the identity must not. Consumed below, so it cannot
+--              leak into the next load.
+--   cid        optional connection id, recorded on the trace row
 --
--- To feed a stream of lines instead of a file, use load_lines.sql in place of
--- this file.
+-- trace.filename is what identifies a trace and refuses a second copy of it, so
+-- whichever of the two supplies it must be distinct enough to tell two captures
+-- apart.
+--
+-- This is the browser's path for a whole file: register the bytes, load them.
+-- load_lines.sql is for chunks arriving as text; see its header for which to
+-- reach for.
 --
 -- Lines are read as raw JSON rather than letting read_json_auto infer a schema.
 -- Inference unions the header line with the event lines and every event shape
@@ -56,6 +71,12 @@ END;
 -- value left over from an earlier streamed load in the same session.
 SET VARIABLE lines = NULL;
 
--- A file names itself. Assigned rather than defaulted, so a filename left over
--- from an earlier load in the same session cannot leak into this one.
-SET VARIABLE filename = getvariable('src');
+-- A file names itself unless the caller says otherwise. Both lines matter: the
+-- first assigns rather than defaults, so a filename left from an earlier load
+-- cannot leak in; the second spends trace_name, so an override cannot silently
+-- apply to the next load either. A caller feeding several buffers into one trace
+-- sets trace_name before each of them.
+-- The cast is load-bearing: a bare NULL types the variable INTEGER, and the next
+-- coalesce then tries to read a filename as an INT32.
+SET VARIABLE filename   = coalesce(getvariable('trace_name'), getvariable('src'));
+SET VARIABLE trace_name = NULL::VARCHAR;

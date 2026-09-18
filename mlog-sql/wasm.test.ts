@@ -241,6 +241,90 @@ test("a registered buffer loads in wasm and matches the CLI exactly", async () =
     expect(wasm).toEqual(cli);
 });
 
+test("several registered buffers accumulate into one trace", async () => {
+    // The browser's streaming path. load_lines.sql would mean building a SQL
+    // string per chunk and doubling every quote; registering bytes avoids both,
+    // but src then changes per chunk while the trace's identity must not -- which
+    // is what trace_name is for.
+    const f = fixture();
+    const lines = f.sender.trimEnd().split("\n");
+    const db = await createDuckDB(
+        {
+            mvp: { mainModule: `${DIST}/duckdb-mvp.wasm`, mainWorker: `${DIST}/duckdb-node-mvp.worker.cjs` },
+            eh: { mainModule: `${DIST}/duckdb-eh.wasm`, mainWorker: `${DIST}/duckdb-node-eh.worker.cjs` },
+        },
+        new ConsoleLogger(LogLevel.ERROR),
+        NODE_RUNTIME,
+    );
+    await db.instantiate();
+    const conn = db.connect();
+    try {
+        conn.query(sqlFile("schema.sql"));
+
+        // one line per chunk, header first -- the worst case for accumulation
+        for (const [i, line] of lines.entries()) {
+            const name = `chunk-${i}.mlog`;
+            db.registerFileBuffer(name, new TextEncoder().encode(line + "\n"));
+            conn.query(`SET VARIABLE src = '${name}';`
+                     + ` SET VARIABLE trace_name = 'sender.mlog';`
+                     + ` SET VARIABLE cid = 'c1';`);
+            conn.query(sqlFile("load_file.sql"));
+            conn.query(sqlFile("load_common.sql"));
+        }
+
+        // one trace, filed under trace_name and not under any chunk's src
+        const rows = conn.query(
+            "SELECT trace_id::INT AS trace_id, filename FROM trace",
+        ).toArray().map((r) => r.toJSON()) as { trace_id: number; filename: string }[];
+        expect(rows).toEqual([{ trace_id: 1, filename: "sender.mlog" }]);
+
+        // and every chunk's rows landed under it
+        const n = conn.query(
+            "SELECT count(*)::INT AS objects FROM object",
+        ).toArray()[0]!.toJSON() as { objects: number };
+        expect(Number(n.objects)).toBe(3);
+    } finally {
+        conn.close();
+        db.reset();
+    }
+});
+
+test("trace_name is spent, so an override cannot leak into the next load", async () => {
+    const f = fixture();
+    const db = await createDuckDB(
+        {
+            mvp: { mainModule: `${DIST}/duckdb-mvp.wasm`, mainWorker: `${DIST}/duckdb-node-mvp.worker.cjs` },
+            eh: { mainModule: `${DIST}/duckdb-eh.wasm`, mainWorker: `${DIST}/duckdb-node-eh.worker.cjs` },
+        },
+        new ConsoleLogger(LogLevel.ERROR),
+        NODE_RUNTIME,
+    );
+    await db.instantiate();
+    const conn = db.connect();
+    try {
+        conn.query(sqlFile("schema.sql"));
+
+        db.registerFileBuffer("a.mlog", new TextEncoder().encode(f.sender));
+        conn.query("SET VARIABLE src='a.mlog'; SET VARIABLE trace_name='named.mlog'; SET VARIABLE cid='c1';");
+        conn.query(sqlFile("load_file.sql"));
+        conn.query(sqlFile("load_common.sql"));
+
+        // second load sets no trace_name; it must fall back to src, not reuse the
+        // previous override -- which would collide on filename and be refused
+        db.registerFileBuffer("b.mlog", new TextEncoder().encode(f.receiver));
+        conn.query("SET VARIABLE src='b.mlog'; SET VARIABLE cid='c1';");
+        conn.query(sqlFile("load_file.sql"));
+        conn.query(sqlFile("load_common.sql"));
+
+        const rows = conn.query("SELECT filename FROM trace ORDER BY trace_id")
+            .toArray().map((r) => r.toJSON()) as { filename: string }[];
+        expect(rows).toEqual([{ filename: "named.mlog" }, { filename: "b.mlog" }]);
+    } finally {
+        conn.close();
+        db.reset();
+    }
+});
+
 test("the guards fire in wasm too, not just under the CLI", async () => {
     // error() has to surface as a thrown exception, or a browser load would
     // accept a capture the CLI refuses
