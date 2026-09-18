@@ -42,3 +42,11 @@ supply one locally to run it.
 - these are mlog files. the header shape was inherited from qlog, and that is all
   qlog about them -- so qlog_version/qlog_format keep their names, nothing else says qlog.
 - duplicate prevention deferred until streaming ships; only chunked feeding can duplicate rows, and a PK on subgroup_object costs 7.6x db size vs 0.21s to run test-duplicated-mlog.sql.
+- one capture per database file. group_id overlaps between runs, so the object
+  join key collides across captures: two capture dirs in one file left every leg
+  median right to two decimals while relay dwell's mean went out by 7x. Nothing in
+  the schema scopes a capture, so nothing has to remember to. Compare runs with
+  ATTACH -- a view resolves against its own database's tables.
+- `hop` is the one place the cross-trace join is written. Hand-rolling it is how
+  the above goes wrong silently. Relay dwell is not a hop: it spans two
+  connections at one host and waits on deciding how role is known.

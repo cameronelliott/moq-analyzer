@@ -223,6 +223,50 @@ JOIN      subgroup_stream s USING (trace_id, stream_id)
 LEFT JOIN track           t USING (trace_id, track_alias)
 LEFT JOIN trace          tr USING (trace_id);
 
+-- One object crossing one connection: built at one end, decoded at the other.
+-- That is a network leg -- publisher to relay, or relay to subscriber. Relay
+-- dwell is not a hop: it spans two connections at one host, so it needs to know
+-- which host is the relay, and it is built from a pair of these.
+--
+-- Written once, here, because getting it wrong is invisible. A hand-rolled
+-- version that drops the cid scoping still returns plausible medians while the
+-- means and every `n` go wrong -- measured on two capture directories loaded
+-- into one database, leg medians held to two decimals while relay dwell's mean
+-- was out by 7x. Hence one database per capture, and hence this view.
+--
+-- Requires cid: it is the only thing tying two traces to one connection. A trace
+-- loaded without one produces no hops. Objects whose track never resolved join
+-- on NULL and drop out, since two ends cannot be matched without a track name --
+-- track_alias is per-connection and differs across the hop.
+--
+-- us is signed on purpose. Negative means the receiver's clock read earlier than
+-- the sender's, i.e. clock error exceeded the real transit -- a finding, not a
+-- row to hide. The six-POP captures give 300,996 hops, none negative.
+CREATE OR REPLACE VIEW hop AS
+SELECT
+    ts.cid,
+    s.track_namespace,
+    s.track_name,
+    s.group_id,
+    s.subgroup_id,
+    s.object_id,
+    s.trace_id   AS send_trace,
+    r.trace_id   AS recv_trace,
+    s.wall_time  AS t_send,
+    r.wall_time  AS t_recv,
+    datediff('microsecond', s.wall_time, r.wall_time) AS us,
+    s.payload_length
+FROM object s
+JOIN trace ts ON ts.trace_id = s.trace_id
+JOIN trace tr ON tr.cid = ts.cid AND tr.trace_id <> ts.trace_id
+JOIN object r ON r.trace_id = tr.trace_id
+             AND r.direction = 'parsed'
+             AND (r.track_namespace, r.track_name,
+                  r.group_id, r.subgroup_id, r.object_id)
+               = (s.track_namespace, s.track_name,
+                  s.group_id, s.subgroup_id, s.object_id)
+WHERE s.direction = 'created';
+
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add
 -- ORDER BY time_us -- rather than for aggregation; prefer `object` for that.

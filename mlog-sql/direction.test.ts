@@ -99,14 +99,16 @@ function writeLog(dir: string, name: string, head: unknown, events: unknown[]) {
     return log;
 }
 
-/** Load one or more logs into one database. Returns the db path and the outcome. */
-function loadInto(db: string, logs: string[]) {
+/** Load one or more logs into one database. A cid pairs two ends of a connection. */
+function loadInto(db: string, logs: (string | { log: string; cid: string })[]) {
     let last = { ok: true, stderr: "" };
-    for (const log of logs) {
+    for (const entry of logs) {
+        const { log, cid } = typeof entry === "string" ? { log: entry, cid: undefined } : entry;
         const r = Bun.spawnSync([
             "duckdb", db,
             "-f", join(REPO, "schema.sql"),
-            "-c", `set variable src='${log}';`,
+            "-c", `set variable src='${log}';`
+                + (cid === undefined ? "" : ` set variable cid='${cid}';`),
             "-f", join(REPO, "load_file.sql"),
             "-f", join(REPO, "load_common.sql"),
         ]);
@@ -213,7 +215,10 @@ test("the same object in two traces joins into a latency leg", () => {
         ]);
 
         const db = join(dir, "leg.db");
-        expect(loadInto(db, [sender, receiver]).ok).toBe(true);
+        expect(loadInto(db, [
+            { log: sender, cid: "conn-1" },
+            { log: receiver, cid: "conn-1" },
+        ]).ok).toBe(true);
 
         // two files, two generated ids, no caller bookkeeping
         expect(query<{ trace_id: number; vantage_point: string }>(db,
@@ -239,6 +244,60 @@ test("the same object in two traces joins into a latency leg", () => {
             where s.direction = 'created'`);
 
         expect(legs).toEqual([{ track_name: "1.m4s", ms: 50 }]);
+
+        // and the `hop` view is that join, written once so nobody re-derives it
+        expect(query<{ cid: string; track_name: string; us: number; n: number }>(db, `
+            select cid, track_name, us::int as us, count(*)::int as n
+            from hop group by 1,2,3`))
+            .toEqual([{ cid: "conn-1", track_name: "1.m4s", us: 50_000, n: 1 }]);
+
+        // it names both ends, so a leg can be attributed to a vantage point
+        expect(query<{ send_trace: number; recv_trace: number }>(db,
+            "select send_trace, recv_trace from hop"))
+            .toEqual([{ send_trace: 1, recv_trace: 2 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("hop needs a cid, and never matches a trace against itself", () => {
+    const dir = tmp("mlog-hop-nocid-");
+    try {
+        // the same exchange as above, but no cid supplied at load
+        const sender = writeLog(dir, "s.jsonl", header("client"), [
+            subscribe(1, 5, "/bbb", "1.m4s"), subscribeOk(2, 5, 5),
+            subgroupHeader("created", 9, 2, 5, 7), object("created", 10, 2, 7, 0),
+        ]);
+        const receiver = writeLog(dir, "r.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const db = join(dir, "nocid.db");
+        expect(loadInto(db, [sender, receiver]).ok).toBe(true);
+
+        // both objects landed, but nothing ties the two traces to one connection
+        expect(query<{ n: number }>(db, "select count(*) as n from object")[0]!.n).toBe(2);
+        expect(query<{ n: number }>(db, "select count(*) as n from hop")[0]!.n).toBe(0);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("one trace carrying both directions produces no hop with itself", () => {
+    const dir = tmp("mlog-hop-self-");
+    try {
+        // a relay end that both receives and forwards the same object id
+        const log = writeLog(dir, "self.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 10, 2, 4, 7), object("parsed", 11, 2, 7, 0),
+            subgroupHeader("created", 12, 3, 4, 7), object("created", 13, 3, 7, 0),
+        ]);
+        const db = join(dir, "self.db");
+        expect(loadInto(db, [{ log, cid: "conn-1" }]).ok).toBe(true);
+
+        expect(query<{ n: number }>(db, "select count(*) as n from object")[0]!.n).toBe(2);
+        // a hop crosses a connection; one endpoint's own two sides are not one
+        expect(query<{ n: number }>(db, "select count(*) as n from hop")[0]!.n).toBe(0);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
