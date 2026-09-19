@@ -435,6 +435,52 @@ SELECT
 FROM obj o LEFT JOIN win w USING (cid)
 GROUP BY o.cid;
 
+-- One row per object per leg: the whole of chart 1. Three rows for each object
+-- that made it to a subscriber -- into the relay, through it, out to that
+-- subscriber -- so a strip chart groups by leg and a composition bar sums means
+-- across them.
+--
+-- The join runs through dwell rather than off hop directly, and that is the
+-- point of the view. hop alone cannot say which leg a row belongs to for a
+-- given subscriber: the publisher's leg is one connection shared by all of
+-- them, so attributing it per path means matching the object through the relay.
+-- Doing that by hand is where chart 1 goes quietly wrong.
+--
+-- Read leg 1 as the check: it is one physical hop measured once per subscriber,
+-- so those medians must agree. On the six-POP captures they land within 0.02 ms
+-- of each other across all four.
+--
+-- Means, not medians, for a composition bar. Per-leg means sum to the
+-- end-to-end mean and medians do not -- measured there, 74.942 + 1.909 + 55.780
+-- comes to the end-to-end 132.631, while the medians make 131.944 against an
+-- actual 131.76. The relay is also where that matters most: its mean runs 1.4x
+-- to 15x its median, so a median-only bar draws a flat sliver and hides it.
+CREATE OR REPLACE VIEW leg AS
+SELECT d.out_cid AS sub_cid, d.in_cid, 2 AS leg_no, 'relay dwell' AS leg,
+       d.track_namespace, d.track_name, d.group_id, d.subgroup_id, d.object_id,
+       d.t_in AS t_start, d.t_out AS t_end, d.us
+FROM dwell d
+UNION ALL
+SELECT d.out_cid, d.in_cid, 1, 'pub -> relay',
+       h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
+       h.t_send, h.t_recv, h.us
+FROM dwell d
+JOIN hop h ON h.cid = d.in_cid
+          AND (h.track_namespace, h.track_name,
+               h.group_id, h.subgroup_id, h.object_id)
+            = (d.track_namespace, d.track_name,
+               d.group_id, d.subgroup_id, d.object_id)
+UNION ALL
+SELECT d.out_cid, d.in_cid, 3, 'relay -> sub',
+       h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
+       h.t_send, h.t_recv, h.us
+FROM dwell d
+JOIN hop h ON h.cid = d.out_cid
+          AND (h.track_namespace, h.track_name,
+               h.group_id, h.subgroup_id, h.object_id)
+            = (d.track_namespace, d.track_name,
+               d.group_id, d.subgroup_id, d.object_id);
+
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add
 -- ORDER BY time_us -- rather than for aggregation; prefer `object` for that.

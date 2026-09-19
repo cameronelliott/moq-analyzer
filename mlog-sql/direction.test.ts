@@ -354,6 +354,58 @@ test("dwell is the relay's own two sides, across two connections", () => {
     }
 });
 
+test("leg gives three rows per object, and the means account for the path", () => {
+    const dir = tmp("mlog-leg-");
+    try {
+        const track = (id: number, alias: number) => [subscribe(1, id, "/bbb", "1.m4s"),
+                                                      subscribeOk(2, id, alias)];
+        // pub sends at 10, relay receives 60, forwards 62, sub receives 100
+        const pub = writeLog(dir, "pub.jsonl", header("client"), [
+            ...track(5, 5),
+            subgroupHeader("created", 9, 2, 5, 7), object("created", 10, 2, 7, 0),
+        ]);
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("created", 61, 3, 4, 7), object("created", 62, 3, 7, 0),
+        ]);
+        const sub = writeLog(dir, "sub.jsonl", header("client"), [
+            ...track(4, 4),
+            subgroupHeader("parsed", 99, 3, 4, 7), object("parsed", 100, 3, 7, 0),
+        ]);
+
+        const db = join(dir, "leg.db");
+        expect(loadInto(db, [
+            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+        ]).ok).toBe(true);
+
+        expect(query<{ leg_no: number; leg: string; us: number }>(db,
+            "select leg_no, leg, us::int as us from leg order by leg_no"))
+            .toEqual([
+                { leg_no: 1, leg: "pub -> relay", us: 50_000 },
+                { leg_no: 2, leg: "relay dwell", us: 2_000 },
+                { leg_no: 3, leg: "relay -> sub", us: 38_000 },
+            ]);
+
+        // the three legs account for the whole path, which is what lets a
+        // composition bar be built from means
+        expect(query<{ total: number }>(db,
+            "select sum(us)::int as total from leg")).toEqual([{ total: 90_000 }]);
+
+        // every leg is attributed to the subscriber whose path it belongs to,
+        // including leg 1, which is a connection they all share
+        expect(query<{ sub_cid: string; n: number }>(db,
+            "select sub_cid, count(*)::int as n from leg group by 1"))
+            .toEqual([{ sub_cid: "c2", n: 3 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test("a capture with no relay has hops but no dwell", () => {
     const dir = tmp("mlog-dwell-none-");
     try {
