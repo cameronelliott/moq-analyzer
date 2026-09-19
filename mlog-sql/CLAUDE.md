@@ -65,6 +65,37 @@ Three consequences worth knowing:
   rendering it, not the SQL: in wasm the caller just gets an empty result. So it
   is not worth fixing with `.mode`, which would not run in the browser at all.
 
+# open, not decided
+
+**Round-tripping.** Do we want mlog json -> duckdb -> mlog json to come back
+arguably correct? Not byte-identical -- arguably correct. Worth deciding before
+more of the loader hardens around the current shape. What the loader drops or
+alters today, as an agenda rather than a verdict:
+
+    time             DOUBLE ms -> (time*1000)::BIGINT us. Sub-microsecond gone.
+    reference_time   same, via TIMESTAMPTZ.
+    extension_headers  only extension_count survives; the headers themselves are
+                     dropped. Zero on all 605,048 objects of real-6pop, so this
+                     is theoretical for now -- but it is the one true data loss.
+    parameters       [[k,v],...] -> MAP. Array order gone. A repeated key
+                     already errors rather than being dropped quietly.
+    event_type       inside `data`, not stored -- but derivable from the event
+                     name and direction, so recoverable.
+    group_id,
+    subgroup_id      dropped from objects as redundant; subgroup_stream has
+                     them, so recoverable through stream_id.
+    key order        within `data`, not preserved.
+    line order       among events sharing one timestamp, not preserved.
+
+Unknown events keep their `data` verbatim in event_other, so those round-trip
+already.
+
+**Chunked / streaming ingest.** Pinned, not in the first release. What is known:
+load_file.sql already does it given bytes -- re-register one buffer name per
+chunk and hold `trace_name` constant, and the chunks accumulate into one trace.
+load_lines.sql survives only because the CLI has no registerFileBuffer, which is
+what streaming.test.ts's chunk-size sweep is built on.
+
 # Cameron's decisions
 
 - json shape drift should be caught during regular production use. in the load*.sql files.
