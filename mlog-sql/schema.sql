@@ -360,14 +360,40 @@ SELECT
     hout.send_trace AS relay_out_trace,
     hin.t_recv  AS t_in,
     hout.t_send AS t_out,
-    datediff('microsecond', hin.t_recv, hout.t_send) AS us
+    datediff('microsecond', hin.t_recv, hout.t_send) AS us,
+    -- The relay already had this object when the subscriber asked for it, so its
+    -- dwell is how long the subscriber took to arrive, not how long the relay
+    -- took to forward. Both timestamps are the relay's own clock on two of its
+    -- traces, so no cross-host sync is involved.
+    --
+    -- Per track, not per connection: 0.mp4 is acknowledged 112-215 ms before the
+    -- media tracks, and the connection's first subscribe_ok would misclassify
+    -- anything arriving in that window.
+    --
+    -- Held is rare and enormous -- 62 to 88 objects per subscriber against
+    -- ~50,000, with a median near 700 ms against 0.3 ms, and 60 to 180 seconds
+    -- at the top. It is the whole of dwell's tail: excluding it leaves a mean
+    -- 1.2x the median rather than 15x. A subscriber that joined first has none.
+    -- False rather than NULL when no subscribe_ok was seen: unproven, not held.
+    coalesce(hin.t_recv < ok.ok_at, false) AS held
 FROM hop hin
 JOIN trace sin  ON sin.trace_id  = hin.send_trace  AND sin.vantage_point  = 'client'
 JOIN hop hout   ON (hout.track_namespace, hout.track_name,
                     hout.group_id, hout.subgroup_id, hout.object_id)
                  = (hin.track_namespace, hin.track_name,
                     hin.group_id, hin.subgroup_id, hin.object_id)
-JOIN trace sout ON sout.trace_id = hout.send_trace AND sout.vantage_point = 'server';
+JOIN trace sout ON sout.trace_id = hout.send_trace AND sout.vantage_point = 'server'
+LEFT JOIN (
+    SELECT c.trace_id, k.track_namespace, k.track_name,
+           any_value(tr.reference_time) + to_microseconds(min(c.time_us)) AS ok_at
+    FROM control_message c
+    JOIN track k  ON k.trace_id = c.trace_id AND k.track_alias = c.track_alias
+    JOIN trace tr ON tr.trace_id = c.trace_id
+    WHERE c.message_type = 'subscribe_ok' AND c.direction = 'created'
+    GROUP BY c.trace_id, k.track_namespace, k.track_name
+) ok ON  ok.trace_id        = hout.send_trace
+     AND ok.track_namespace = hin.track_namespace
+     AND ok.track_name      = hin.track_name;
 
 -- What a chart is allowed to claim, per connection. Everything here is counted
 -- from the mlogs; nothing is inferred.
@@ -455,11 +481,16 @@ GROUP BY o.cid;
 -- comes to the end-to-end 132.631, while the medians make 131.944 against an
 -- actual 131.76. The relay is also where that matters most: its mean runs 1.4x
 -- to 15x its median, so a median-only bar draws a flat sliver and hides it.
+-- Held objects are excluded, whole. Their dwell measures a subscriber arriving
+-- rather than a relay forwarding, and dropping only their middle leg would break
+-- the property that the three sum to end to end. They stay reachable through
+-- `dwell` and `hop`, where catch-up is worth charting on its own.
 CREATE OR REPLACE VIEW leg AS
 SELECT d.out_cid AS sub_cid, d.in_cid, 2 AS leg_no, 'relay dwell' AS leg,
        d.track_namespace, d.track_name, d.group_id, d.subgroup_id, d.object_id,
        d.t_in AS t_start, d.t_out AS t_end, d.us
 FROM dwell d
+WHERE NOT d.held
 UNION ALL
 SELECT d.out_cid, d.in_cid, 1, 'pub -> relay',
        h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
@@ -470,6 +501,7 @@ JOIN hop h ON h.cid = d.in_cid
                h.group_id, h.subgroup_id, h.object_id)
             = (d.track_namespace, d.track_name,
                d.group_id, d.subgroup_id, d.object_id)
+WHERE NOT d.held
 UNION ALL
 SELECT d.out_cid, d.in_cid, 3, 'relay -> sub',
        h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
@@ -479,7 +511,68 @@ JOIN hop h ON h.cid = d.out_cid
           AND (h.track_namespace, h.track_name,
                h.group_id, h.subgroup_id, h.object_id)
             = (d.track_namespace, d.track_name,
-               d.group_id, d.subgroup_id, d.object_id);
+               d.group_id, d.subgroup_id, d.object_id)
+WHERE NOT d.held;
+
+-- Chart 2. The gap between an object arriving and the one before it on the same
+-- track, at whichever endpoint decoded it. rtcstats calls this Latency,
+-- chrome://webrtc-internals calls it Jitter, RFC 3550 6.4.1 defines it.
+--
+-- One trace and one track at a time: the window partitions by trace_id, so
+-- nothing is ever measured across two endpoints or two tracks. The first object
+-- of each has no predecessor and comes back NULL rather than zero.
+--
+-- vantage_point is carried so a caller can say which end they mean -- `client`
+-- is a subscriber here, which is the chart the proposal asks for. Whether a
+-- late joiner's catch-up burst belongs in it is not decided; the rows are all
+-- present, so filtering is the caller's call for now.
+CREATE OR REPLACE VIEW interarrival AS
+SELECT
+    t.cid,
+    o.trace_id,
+    t.vantage_point,
+    o.track_namespace,
+    o.track_name,
+    o.group_id,
+    o.subgroup_id,
+    o.object_id,
+    o.wall_time,
+    o.payload_length,
+    datediff('microsecond',
+             lag(o.wall_time) OVER (PARTITION BY o.trace_id, o.track_namespace,
+                                                 o.track_name
+                                    ORDER BY o.time_us),
+             o.wall_time) AS us
+FROM object o
+JOIN trace t USING (trace_id)
+WHERE o.direction = 'parsed';
+
+-- Chart 3. Bytes per track per second, which is the one place a line is honest,
+-- because a rate is bucketed whether you like it or not.
+--
+-- payload_length only: this is media bytes, not bytes on the wire, so it counts
+-- no QUIC or MoQ framing and no retransmission. A second with no object has no
+-- row rather than a zero -- absent, not zero -- so a chart that wants a
+-- continuous axis fills the gaps itself and can see that it did.
+--
+-- One second, fixed. time_bucket on a TIMESTAMPTZ follows the session zone, but
+-- whole-minute offsets cannot move a second boundary, so this one is safe where
+-- an hourly bucket would not be.
+CREATE OR REPLACE VIEW throughput AS
+SELECT
+    t.cid,
+    o.trace_id,
+    t.vantage_point,
+    o.track_namespace,
+    o.track_name,
+    time_bucket(INTERVAL '1 second', o.wall_time) AS sec,
+    count(*)                        AS objects,
+    sum(o.payload_length)           AS bytes,
+    sum(o.payload_length) * 8       AS bits
+FROM object o
+JOIN trace t USING (trace_id)
+WHERE o.direction = 'parsed'
+GROUP BY ALL;
 
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add

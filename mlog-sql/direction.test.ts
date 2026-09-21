@@ -93,6 +93,21 @@ const subscribeOk = (time: number, id: number, alias: number) => ({
     },
 });
 
+/** A relay's own subscribe_ok, which it *created* on an outbound connection.
+ *  Its time is what decides whether an object was already held. */
+const subscribeOkCreated = (time: number, id: number, alias: number) => ({
+    time,
+    name: "moqt:control_message_created",
+    data: {
+        event_type: "control_message_created",
+        stream_id: 0,
+        message_type: "subscribe_ok",
+        subscribe_id: id,
+        track_alias: alias,
+        parameters: [],
+    },
+});
+
 function writeLog(dir: string, name: string, head: unknown, events: unknown[]) {
     const log = join(dir, name);
     writeFileSync(log, [head, ...events].map((o) => JSON.stringify(o)).join("\n") + "\n");
@@ -401,6 +416,114 @@ test("leg gives three rows per object, and the means account for the path", () =
         expect(query<{ sub_cid: string; n: number }>(db,
             "select sub_cid, count(*)::int as n from leg group by 1"))
             .toEqual([{ sub_cid: "c2", n: 3 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("an object the relay held before subscribe_ok is flagged, and left out of leg", () => {
+    const dir = tmp("mlog-held-");
+    try {
+        // Two objects. The relay receives A at 50 and B at 100, and accepts this
+        // subscriber's subscription at 70 -- so A was already sitting there and
+        // B was not. A's dwell measures the subscriber showing up, not the relay.
+        const pub = writeLog(dir, "pub.jsonl", header("client"), [
+            subscribe(1, 5, "/bbb", "1.m4s"), subscribeOk(2, 5, 5),
+            subgroupHeader("created", 9, 2, 5, 7),
+            object("created", 10, 2, 7, 0),
+            object("created", 60, 2, 7, 1),
+        ]);
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 49, 2, 4, 7),
+            object("parsed", 50, 2, 7, 0),
+            object("parsed", 100, 2, 7, 1),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"),
+            subscribeOkCreated(70, 4, 4),          // the moment that decides it
+            subgroupHeader("created", 79, 3, 4, 7),
+            object("created", 80, 3, 7, 0),
+            object("created", 110, 3, 7, 1),
+        ]);
+        const sub = writeLog(dir, "sub.jsonl", header("client"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 119, 3, 4, 7),
+            object("parsed", 120, 3, 7, 0),
+            object("parsed", 150, 3, 7, 1),
+        ]);
+
+        const db = join(dir, "held.db");
+        expect(loadInto(db, [
+            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+        ]).ok).toBe(true);
+
+        // dwell keeps both and says which is which
+        expect(query<{ object_id: number; held: boolean; us: number }>(db,
+            "select object_id, held, us::int as us from dwell order by object_id"))
+            .toEqual([
+                { object_id: 0, held: true, us: 30_000 },
+                { object_id: 1, held: false, us: 10_000 },
+            ]);
+
+        // leg drops the held object whole -- all three of its legs, not just dwell
+        expect(query<{ object_id: number; n: number }>(db,
+            "select object_id, count(*)::int as n from leg group by 1 order by 1"))
+            .toEqual([{ object_id: 1, n: 3 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("interarrival measures one track at one endpoint, and throughput buckets it", () => {
+    const dir = tmp("mlog-charts23-");
+    try {
+        // Two tracks, interleaved on purpose. 1.m4s arrives at 60 and 100,
+        // 2.m4s at 70 and 80, so the per-track gaps are 40 and 10. A lag that
+        // forgot to partition would see 60,70,80,100 and answer 10,10,20 --
+        // which is why one track in the fixture would prove nothing.
+        const sender = writeLog(dir, "s.jsonl", header("client"), [
+            subscribe(1, 5, "/bbb", "1.m4s"), subscribeOk(2, 5, 5),
+            subscribe(3, 7, "/bbb", "2.m4s"), subscribeOk(4, 7, 7),
+            subgroupHeader("created", 9, 2, 5, 7),
+            subgroupHeader("created", 9, 6, 7, 7),
+            object("created", 10, 2, 7, 0), object("created", 20, 6, 7, 0),
+            object("created", 30, 6, 7, 1), object("created", 40, 2, 7, 1),
+        ]);
+        const receiver = writeLog(dir, "r.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subscribe(3, 6, "/bbb", "2.m4s"), subscribeOk(4, 6, 6),
+            subgroupHeader("parsed", 59, 2, 4, 7),
+            subgroupHeader("parsed", 59, 6, 6, 7),
+            object("parsed", 60, 2, 7, 0), object("parsed", 70, 6, 7, 0),
+            object("parsed", 80, 6, 7, 1), object("parsed", 100, 2, 7, 1),
+        ]);
+        const db = join(dir, "charts.db");
+        expect(loadInto(db, [
+            { log: sender, cid: "c1" }, { log: receiver, cid: "c1" },
+        ]).ok).toBe(true);
+
+        // the first object of each track has no predecessor: NULL, not zero
+        expect(query<{ track_name: string; object_id: number; us: number | null }>(db,
+            `select track_name, object_id, us::int as us
+             from interarrival order by track_name, object_id`))
+            .toEqual([
+                { track_name: "1.m4s", object_id: 0, us: null },
+                { track_name: "1.m4s", object_id: 1, us: 40_000 },
+                { track_name: "2.m4s", object_id: 0, us: null },
+                { track_name: "2.m4s", object_id: 1, us: 10_000 },
+            ]);
+
+        // throughput buckets per track, not per endpoint: two objects of 1271
+        // bytes each, both tracks inside the same second
+        expect(query<{ track_name: string; objects: number; bytes: number; bits: number }>(db,
+            `select track_name, objects::int as objects, bytes::int as bytes,
+                    bits::int as bits from throughput order by track_name`))
+            .toEqual([
+                { track_name: "1.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+                { track_name: "2.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+            ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
