@@ -2,6 +2,20 @@
 
 # CLAUDE.md
 
+## what this is
+
+- Cameron is building a MoQ (media over quic) mlog and qlog file analyzer.
+- mlog and qlog are RFC 7464 json nl files with trace event records.
+
+# cameron says about the web-only analyzer and SSR rendered analyzer pages
+
+ I want to index the actual analyzer pages also, so, yes, there is a server-side version of the analyzers page!
+  it could be a great way to be found. But there will also be the empty version as a tool until someone drops mlog (or qlog) files
+  into it. just like rtcstats.com has https://rtcstats.com/showcase, which allows reviewing other peoples analysis sessions, we are
+  going to have that too
+
+## tests and contracts first
+
 - **Rust**: Lock types, error enums, and trait contracts first; enforce zero `.unwrap()` via `cargo clippy --all-targets -- -D warnings` and validate against unit tests before writing implementations.
 - **TypeScript**: Define strict interfaces, Discriminated Unions, or Zod schemas before logic; enforce `tsc --noEmit` with zero `any`, and verify behavior via test suites. Casts are allowed only at a parse boundary — `JSON.parse`, subprocess output, anything crossing into the program untyped — and each one carries a comment stating what is being assumed. Prefer validating a shape over asserting it: a generic return type that launders `JSON.parse` is the same unchecked assumption as an `as`, just harder to see.
 - **Python**: Define Pydantic models or `Protocol` boundaries with complete type hints first; pass `mypy --strict` (or `pyright`) and satisfy `pytest` suites before considering a task complete.
