@@ -23,5 +23,8 @@
     "@awesome.me/webawesome": "3.13.0",
     "lit": "3.3.3",
     "marked": "18.0.14"
+  },
+  "overrides": {
+    "marked": "18.0.14"
   }
 }

@@ -8,5 +8,11 @@
    From https://webawesome.com/docs/ssr/ */
 :not([did-ssr]):not(:defined) { visibility: hidden; }
 
+/* Multiplies every margin in the prose rhythm; type sizes are untouched.
+   Applies to both page kinds: the static pages' injected HTML and the headings
+   <app-markdown> generates in the browser, because that element is light DOM
+   and these descendant selectors reach straight through it. */
+.wa-prose { --wa-prose-rhythm-scale: 0.5; }
+
 body { max-width: 60rem; margin: 0 auto; padding: 2rem; }
 header { display: flex; justify-content: space-between; align-items: center; }
