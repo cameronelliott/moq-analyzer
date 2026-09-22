@@ -1,0 +1,20 @@
+/* FROZEN. A copy of lib/page.css as it stood at the first extraction, kept only
+   so experiment 5 and experiment 6 still run. Current code is
+   lib/components.css (what the elements need) plus site/app.css (what a site
+   chooses), which is this file split along that line. */
+
+/* Shared page chrome for a markdown-charts page. Loaded with a <link>, so it
+   costs no JS and applies before first paint. */
+
+html, body { min-height: 100%; padding: 0; margin: 0; }
+
+wa-page { --menu-width: 16rem; }
+wa-page[view='mobile'] { --menu-width: auto; }
+
+/* An unknown element defaults to display:inline, and the :host rule that would
+   fix that lives in shadow styles a light-DOM component has none of.
+   app-echart keeps its shadow root, so it still sets its own. */
+app-markdown { display: block; }
+
+/* Multiplies every margin in the prose rhythm; type sizes are untouched. */
+.wa-prose { --wa-prose-rhythm-scale: 0.65; }

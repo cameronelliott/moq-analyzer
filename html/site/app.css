@@ -1,0 +1,25 @@
+/* This site's stylesheet entry: Web Awesome's own sheet, what chartdown's
+   elements require, and this site's own chrome -- bundled into dist/app.css so
+   a page loads one file from one origin.
+
+   Everything written here is a decision another site would make differently.
+   Anything that is not belongs in lib/components.css instead. */
+
+@import "@awesome.me/webawesome/dist/styles/webawesome.css";
+@import "../lib/components.css";
+
+html, body { min-height: 100%; padding: 0; margin: 0; }
+
+wa-page { --menu-width: 16rem; }
+wa-page[view='mobile'] { --menu-width: auto; }
+
+/* Multiplies every margin in the prose rhythm; type sizes are untouched. */
+.wa-prose { --wa-prose-rhythm-scale: 0.65; }
+
+/* The scheme toggle carries both icons and CSS picks one, so flipping the
+   scheme is two class changes and nothing else -- no JS touches the icon, and
+   no icon is fetched from anywhere. Paired with the markup in each page's
+   header, which is why this lives beside the site rather than in lib/. */
+.scheme-icon { width: 1.25em; height: 1.25em; }
+:root:not(.wa-dark) .scheme-icon-sun { display: none; }
+:root.wa-dark .scheme-icon-moon { display: none; }

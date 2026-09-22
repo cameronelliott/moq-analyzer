@@ -1,0 +1,288 @@
+<!doctype html>
+<!-- Markdown in, interactive ECharts out: the bare version, in one file.
+     No build step and no install -- lit, marked and echarts are ESM imports
+     from a CDN, pinned. Written to be server-renderable later without changing
+     the components: nothing touches a browser global at module scope, render()
+     is synchronous, `content` arrives as a property, and echarts is imported
+     dynamically inside firstUpdated() so the server pass never evaluates it.
+     Needs a local server -- Chrome refuses module scripts over file://. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bare Markdown Charts</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "lit": "https://esm.sh/lit@3.3.3",
+    "lit/": "https://esm.sh/lit@3.3.3/",
+    "marked": "https://esm.sh/marked@15.0.12",
+    "echarts": "https://esm.sh/echarts@6.1.0"
+  }
+}
+</script>
+
+<style>
+  /* ECharts' default theme is light, so pin the page to light rather than let
+     a dark-mode browser put a light chart on a dark background. */
+  :root { color-scheme: light; }
+  body {
+    margin: 0 auto; max-width: 54rem; padding: 2rem 1.25rem;
+    font: 16px/1.65 system-ui, -apple-system, sans-serif;
+    color: #18181b; background: #fff;
+  }
+</style>
+</head>
+<body>
+
+<app-markdown></app-markdown>
+
+<script type="module">
+import { LitElement, html, css, isServer } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { Marked } from 'marked';
+
+// --- <app-echart> ------------------------------------------------- //
+// One chart. Takes its ECharts option as a URI-encoded attribute, because an
+// attribute is the one channel that survives a server render: the markup the
+// server emits carries the config, and the client picks it up on upgrade with
+// no second fetch and no inline script.
+
+/** Strict JSON first, then a JS object literal. */
+function parseChartOption(src) {
+  try {
+    return JSON.parse(src);
+  } catch {
+    // The fallback buys unquoted keys, trailing commas and comments, which is
+    // most of why writing ECharts options by hand is tolerable. It is an eval,
+    // so it trusts the markdown exactly as much as the unsafeHTML() below
+    // already does: fine for documents we author, not for ones we receive.
+    return Function(`"use strict"; return (${src});`)();
+  }
+}
+
+class AppEChart extends LitElement {
+  static properties = {
+    config: { type: String },
+    height: { type: String },
+    error:  { state: true },
+  };
+
+  static styles = css`
+    :host { display: block; width: 100%; margin: 1.5rem 0; }
+    .chart { width: 100%; }
+    .error {
+      color: #b91c1c; background: #fef2f2; border: 1px solid #fca5a5;
+      border-radius: 6px; padding: .75rem 1rem;
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+    }
+  `;
+
+  #chart;
+  #observer;
+
+  constructor() {
+    super();
+    this.config = '';
+    this.height = '350px';
+    this.error = '';
+  }
+
+  render() {
+    if (this.error) {
+      return html`<div class="error"><strong>ECharts error:</strong> ${this.error}</div>`;
+    }
+    // The server emits exactly this: an empty box at the final height, so the
+    // page does not reflow when the chart arrives.
+    return html`<div class="chart" style="height: ${this.height};"></div>`;
+  }
+
+  firstUpdated(changed) {
+    super.firstUpdated(changed);
+    if (isServer) return;
+    this.#init();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Re-attaching after a move: firstUpdated has already run and
+    // disconnectedCallback disposed the chart, so nothing else would rebuild it.
+    if (!isServer && this.hasUpdated && !this.#chart) this.#init();
+  }
+
+  async #init() {
+    const el = this.renderRoot.querySelector('.chart');
+    if (!el || !this.config) return;
+    try {
+      const option = parseChartOption(decodeURIComponent(this.config));
+      const echarts = await import('echarts');   // browser only, never on the server
+      this.#chart = echarts.init(el);
+      this.#chart.setOption(option);
+      this.#observer = new ResizeObserver(() => this.#chart?.resize());
+      this.#observer.observe(el);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.#observer?.disconnect();
+    this.#observer = undefined;
+    this.#chart?.dispose();
+    this.#chart = undefined;
+  }
+}
+customElements.define('app-echart', AppEChart);
+
+// --- marked setup ------------------------------------------------- //
+// The whole framework, really: one renderer override that turns an ```echarts
+// fence into an element. Every other fence falls through untouched.
+
+function createMarkedParser() {
+  const marked = new Marked();
+  marked.use({
+    renderer: {
+      code({ text, lang }) {
+        if (lang !== 'echarts') return false;   // false = use the default renderer
+        return `<app-echart config="${encodeURIComponent(text.trim())}"></app-echart>\n`;
+      },
+    },
+  });
+  return marked;
+}
+const markdownParser = createMarkedParser();
+
+// --- <app-markdown> ----------------------------------------------- //
+
+class AppMarkdown extends LitElement {
+  static properties = { content: { type: String } };
+
+  static styles = css`
+    :host { display: block; }
+    h1, h2 { line-height: 1.25; margin: 2rem 0 .75rem; }
+    h1 { font-size: 1.9rem; }
+    h2 { font-size: 1.35rem; }
+    pre {
+      background: #1e293b; color: #f8fafc; padding: 1rem;
+      border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.5;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    :not(pre) > code {
+      background: rgba(0, 0, 0, .06); padding: .1em .35em;
+      border-radius: 4px; font-size: .9em;
+    }
+  `;
+
+  constructor() {
+    super();
+    this.content = '';
+  }
+
+  render() {
+    if (!this.content) return html``;
+    // marked.parse() is synchronous as long as no async extension is
+    // registered, which is what lets this same call run in a server render.
+    return html`${unsafeHTML(markdownParser.parse(this.content))}`;
+  }
+}
+customElements.define('app-markdown', AppMarkdown);
+
+// --- the demo document -------------------------------------------- //
+// Inlined, so fences appear as \` -- an artifact of living in a template
+// literal, gone the moment this is a fetch() or a server-set attribute.
+
+const DOC = `
+# Performance Overview
+
+Five fences below. Two \`echarts\` blocks -- one strict JSON, one a loose JS
+object literal -- then a thousand-point chart with a zoom slider, an ordinary
+\`javascript\` block that has to still render as code, and one deliberately
+broken chart that has to fail without taking the page down with it.
+
+## Monthly throughput
+
+\`\`\`echarts
+{
+  "title": { "text": "Monthly Throughput" },
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar", "Apr", "May"] },
+  "yAxis": { "type": "value" },
+  "series": [{ "data": [150, 230, 224, 218, 135], "type": "line" }]
+}
+\`\`\`
+
+## Requests by region
+
+Same fence, authored as a JS object literal instead: unquoted keys, a trailing
+comma, and a comment. This is the shape you actually want to type by hand.
+
+\`\`\`echarts
+{
+  title: { text: 'Requests by Region' },
+  tooltip: {},
+  xAxis: { type: 'category', data: ['us-east', 'us-west', 'eu', 'apac'] },
+  yAxis: { type: 'value' },
+  series: [
+    // one bar per region
+    { type: 'bar', data: [820, 432, 601, 294] },
+  ],
+}
+\`\`\`
+
+## A thousand points
+
+The fence generates its own data rather than listing a thousand numbers. That
+works only because the loose path evals -- a plain JSON fence could not express
+it. Convenient here; the real version will get its rows from a query instead.
+
+\`\`\`echarts
+{
+  title: { text: '1000 Samples' },
+  tooltip: { trigger: 'axis' },
+  xAxis: {
+    type: 'category',
+    boundaryGap: false,
+    data: Array.from({ length: 1000 }, (_, i) => i),
+  },
+  yAxis: { type: 'value', name: 'ms' },
+  // slider is the visible handle; inside adds wheel and drag on the plot itself.
+  // Opening at 0-20% makes it obvious the slider does something.
+  dataZoom: [
+    { type: 'slider', xAxisIndex: 0, start: 0, end: 20 },
+    { type: 'inside', xAxisIndex: 0 },
+  ],
+  series: [{
+    type: 'line',
+    // Both matter at this size: symbols alone would draw 1000 circles, and
+    // lttb downsamples to the pixels actually available while keeping spikes.
+    showSymbol: false,
+    sampling: 'lttb',
+    data: Array.from({ length: 1000 }, (_, i) =>
+      +(50 + 20 * Math.sin(i / 40) + 8 * Math.sin(i / 7) + 5 * Math.sin(i / 2.3)).toFixed(2)),
+  }],
+}
+\`\`\`
+
+## An ordinary fence
+
+\`\`\`javascript
+const ok = true;
+\`\`\`
+
+## A broken one
+
+\`\`\`echarts
+{ this is not valid in any dialect ]]
+\`\`\`
+
+Text after the failure renders normally, which is the point.
+`;
+
+document.querySelector('app-markdown').content = DOC;
+</script>
+
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- Experiment 6: a second page over the same lib/, written by copying
+     experiment 5's shell and replacing the document.
+
+     Its only job is to measure what a page repeats. Nothing here is factored
+     out yet on purpose -- the duplication has to be visible before it is worth
+     removing, and this is the file that makes it visible.
+
+     Needs a local server; Chrome refuses module scripts over file://.
+
+     FROZEN, but running. Kept for what it recorded: 46 non-blank lines
+     byte-identical to experiment 5, which is the measurement that justified
+     building a page template at all.
+
+     lib/ui.js and lib/page.css have since been split apart for bundling, so
+     this page loads copies of them from frozen/ instead. Those copies are dead
+     code kept alive only for these two pages -- current work happens in lib/,
+     and pages for real are generated into dist/ from site/md/. -->
+<html lang="en" class="wa-theme-default wa-palette-default wa-light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latency Budget</title>
+
+<link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.11.0/styles/webawesome.css">
+<script type="module" src="https://ka-f.webawesome.com/webawesome@3.11.0/webawesome.loader.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "lit": "https://esm.sh/lit@3.3.3",
+    "lit/": "https://esm.sh/lit@3.3.3/",
+    "marked": "https://esm.sh/marked@15.0.12",
+    "echarts": "https://esm.sh/echarts@6.1.0",
+    "webawesome/": "https://ka-f.webawesome.com/webawesome@3.11.0/"
+  }
+}
+</script>
+
+<link rel="stylesheet" href="frozen/page.css">
+</head>
+<body>
+
+<wa-page>
+  <header slot="header" class="wa-split">
+    <strong>Latency Budget</strong>
+    <wa-button id="scheme" appearance="plain" aria-label="Toggle dark mode">
+      <wa-icon name="moon"></wa-icon>
+    </wa-button>
+  </header>
+
+  <nav slot="navigation" class="wa-stack wa-gap-2xs"></nav>
+
+  <main>
+    <article class="wa-prose">
+      <app-markdown></app-markdown>
+    </article>
+  </main>
+
+  <footer slot="footer">
+    <small>Experiment 6 &middot; a second page over the same lib/</small>
+  </footer>
+</wa-page>
+
+<script type="module">
+// Registers <app-echart> and <app-markdown> as a side effect.
+import { installSchemeToggle, bindNav } from './frozen/ui.js';
+
+const doc = document.querySelector('app-markdown');
+
+bindNav(document.querySelector('nav[slot="navigation"]'), doc);
+installSchemeToggle(document.getElementById('scheme'));
+
+doc.content = document.getElementById('doc').textContent;
+</script>
+
+<script type="text/markdown" id="doc">
+# Latency Budget
+
+A second document over the same `lib/`. Different title, different sections,
+different charts -- and the page around it is a copy of experiment 5's with the
+document swapped. Whatever is identical between the two files is what a page
+template would have to own.
+
+## Where the time goes
+
+A budget is only useful if the parts add up to the whole, so this is a stacked
+bar rather than a set of independent series.
+
+```echarts
+{
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  legend: {},
+  xAxis: { type: 'category', data: ['ingest', 'relay 1', 'relay 2', 'egress'] },
+  yAxis: { type: 'value', name: 'ms' },
+  series: [
+    { name: 'queue', type: 'bar', stack: 'total', data: [2, 11, 9, 3] },
+    { name: 'transfer', type: 'bar', stack: 'total', data: [8, 24, 22, 7] },
+    { name: 'process', type: 'bar', stack: 'total', data: [4, 6, 5, 4] },
+  ],
+}
+```
+
+## The tail is the story
+
+Averages hide the thing you care about. The same data as percentiles, with the
+median drawn flat for reference.
+
+```echarts
+{
+  tooltip: { trigger: 'axis' },
+  legend: {},
+  xAxis: { type: 'category', data: ['p50', 'p75', 'p90', 'p95', 'p99', 'p99.9'] },
+  yAxis: { type: 'value', name: 'ms' },
+  series: [
+    {
+      name: 'observed',
+      type: 'line',
+      data: [48, 61, 84, 103, 188, 412],
+      markLine: { data: [{ type: 'average', name: 'mean' }] },
+    },
+  ],
+}
+```
+
+## What this page proves
+
+Nothing about charts -- experiment 5 already proved those. It proves that
+adding a page currently means copying a head, a shell and six lines of wiring,
+and that the only part anyone wants to write is the markdown below the fold.
+</script>
+
+</body>
+</html>

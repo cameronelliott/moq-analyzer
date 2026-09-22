@@ -1,0 +1,415 @@
+<!doctype html>
+<!-- Experiment 3: experiment 1's charts inside experiment 2's Web Awesome page.
+     Markdown in, prose and interactive charts out, both following the theme.
+
+     Two different DOM strategies on purpose, and the split is the point:
+
+       app-markdown  light DOM  -- wa-prose styles descendants, and page CSS
+                                   does not cross a shadow boundary, so the
+                                   generated headings and tables must be light.
+       app-echart    shadow DOM -- a self-contained widget. Nothing outside
+                                   should style its internals, and ECharts is
+                                   happy initialising inside a shadow root.
+
+     Merging the two raised one real problem. Experiment 1 pinned the page to
+     color-scheme: light precisely so a light chart would not sit on a dark
+     background. Experiment 2 has a dark toggle. So the charts now listen for a
+     scheme change and re-initialise -- an ECharts theme is fixed at init, so
+     following the page means dispose and build again. Their background is
+     transparent, letting Web Awesome's surface show through rather than having
+     ECharts paint its own.
+
+     Needs a local server; Chrome refuses module scripts over file://. -->
+<html lang="en" class="wa-theme-default wa-palette-default wa-light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown Charts</title>
+
+<link rel="stylesheet" href="https://ka-f.webawesome.com/webawesome@3.11.0/styles/webawesome.css">
+<script type="module" src="https://ka-f.webawesome.com/webawesome@3.11.0/webawesome.loader.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "lit": "https://esm.sh/lit@3.3.3",
+    "lit/": "https://esm.sh/lit@3.3.3/",
+    "marked": "https://esm.sh/marked@15.0.12",
+    "echarts": "https://esm.sh/echarts@6.1.0",
+    "webawesome/": "https://ka-f.webawesome.com/webawesome@3.11.0/"
+  }
+}
+</script>
+
+<style>
+  html, body { min-height: 100%; padding: 0; margin: 0; }
+
+  wa-page { --menu-width: 16rem; }
+  wa-page[view='mobile'] { --menu-width: auto; }
+
+  /* An unknown element defaults to display:inline, and the :host rule that
+     used to fix that lived in the shadow styles a light-DOM component has none
+     of. app-echart keeps its shadow root, so it still sets its own. */
+  app-markdown { display: block; }
+
+  /* Multiplies every margin in the prose rhythm; type sizes are untouched. */
+  .wa-prose { --wa-prose-rhythm-scale: 0.65; }
+</style>
+</head>
+<body>
+
+<wa-page>
+  <header slot="header" class="wa-split">
+    <strong>Markdown Charts</strong>
+    <wa-button id="scheme" appearance="plain" aria-label="Toggle dark mode">
+      <wa-icon name="moon"></wa-icon>
+    </wa-button>
+  </header>
+
+  <nav slot="navigation" class="wa-stack wa-gap-2xs">
+    <a href="#throughput" data-drawer="close">Throughput</a>
+    <a href="#by-region" data-drawer="close">By region</a>
+    <a href="#a-thousand-points" data-drawer="close">A thousand points</a>
+    <a href="#what-the-fence-costs" data-drawer="close">What the fence costs</a>
+    <a href="#when-a-chart-fails" data-drawer="close">When a chart fails</a>
+  </nav>
+
+  <main>
+    <article class="wa-prose">
+      <app-markdown></app-markdown>
+    </article>
+  </main>
+
+  <footer slot="footer">
+    <small>Experiment 3 &middot; lit + marked + ECharts + Web Awesome</small>
+  </footer>
+</wa-page>
+
+<script type="module">
+import { LitElement, html, css, isServer } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { Marked } from 'marked';
+
+// The loader in <head> finds wa-* elements by scanning the document, and a
+// shadow root is not in that scan. app-echart renders its error as a
+// <wa-callout> inside its own shadow root, so that one has to be registered
+// deliberately or it upgrades to nothing and renders as inline text.
+import 'webawesome/components/callout/callout.js';
+
+// --- the page's color scheme -------------------------------------- //
+// Web Awesome drives light/dark with explicit classes on <html>, so the page
+// owns the decision and anything that cannot be themed with CSS alone -- a
+// canvas, for instance -- has to be told when it changes.
+
+const SCHEME_CHANGE = 'scheme-change';
+const isDark = () => document.documentElement.classList.contains('wa-dark');
+
+// --- <app-echart> ------------------------------------------------- //
+
+// Charts sit in a prose column, so their content should start where the text
+// does -- the 15% default leaves them visibly indented against the paragraphs
+// above. `grid` is the plot area and axis labels fall outside it, so
+// containLabel folds the labels into the 0 instead of letting them hang.
+// `right` is left at its 10% default; this is about aligning the left edge.
+const DEFAULT_GRID = { left: '1%', containLabel: true };
+
+/** Page defaults under the fence's own option, so a fence can always override. */
+function withDefaults(option) {
+  return {
+    backgroundColor: 'transparent',
+    ...option,
+    // A shallow spread would drop the grid defaults the moment a fence set any
+    // grid key of its own, so merge that one level deliberately.
+    grid: Array.isArray(option.grid)
+      ? option.grid.map((g) => ({ ...DEFAULT_GRID, ...g }))
+      : { ...DEFAULT_GRID, ...option.grid },
+  };
+}
+
+/** Strict JSON first, then a JS object literal. */
+function parseChartOption(src) {
+  try {
+    return JSON.parse(src);
+  } catch {
+    // The fallback buys unquoted keys, trailing commas and comments, which is
+    // most of why writing ECharts options by hand is tolerable. It is an eval,
+    // so it trusts the markdown exactly as much as the unsafeHTML() below
+    // already does: fine for documents we author, not for ones we receive.
+    return Function(`"use strict"; return (${src});`)();
+  }
+}
+
+class AppEChart extends LitElement {
+  static properties = {
+    config: { type: String },
+    height: { type: String },
+    error:  { state: true },
+  };
+
+  // Tokens inherit through the shadow boundary even though selectors do not,
+  // so the fallbacks here are only for use outside a Web Awesome page.
+  static styles = css`
+    :host { display: block; width: 100%; margin-block: var(--wa-space-l, 1.5rem); }
+    .chart { width: 100%; }
+  `;
+
+  #chart;
+  #observer;
+  #echarts;
+  #option;
+  #onScheme = () => this.#retheme();
+
+  constructor() {
+    super();
+    this.config = '';
+    this.height = '350px';
+    this.error = '';
+  }
+
+  render() {
+    if (this.error) {
+      return html`
+        <wa-callout variant="danger">
+          <strong>ECharts error</strong><br>${this.error}
+        </wa-callout>`;
+    }
+    // The server emits exactly this: an empty box at the final height, so the
+    // page does not reflow when the chart arrives.
+    return html`<div class="chart" style="height: ${this.height};"></div>`;
+  }
+
+  firstUpdated(changed) {
+    super.firstUpdated(changed);
+    if (isServer) return;
+    this.#init();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (isServer) return;
+    addEventListener(SCHEME_CHANGE, this.#onScheme);
+    // Re-attaching after a move: firstUpdated has already run and
+    // disconnectedCallback disposed the chart, so nothing else would rebuild it.
+    if (this.hasUpdated && !this.#chart) this.#init();
+  }
+
+  async #init() {
+    const el = this.renderRoot.querySelector('.chart');
+    if (!el || !this.config) return;
+    try {
+      // Parsed once and kept. Re-parsing on every theme flip would re-run the
+      // eval above, which should happen exactly as often as strictly needed.
+      this.#option ??= parseChartOption(decodeURIComponent(this.config));
+      if (!this.#echarts) this.#echarts = await import('echarts');  // browser only
+
+      // A theme is fixed at init, so following the page means building again.
+      this.#chart = this.#echarts.init(el, isDark() ? 'dark' : undefined);
+      this.#chart.setOption(withDefaults(this.#option));
+
+      this.#observer = new ResizeObserver(() => this.#chart?.resize());
+      this.#observer.observe(el);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  #retheme() {
+    if (!this.#chart) return;   // never initialised, or failed; nothing to redo
+    this.#teardown();
+    this.#init();
+  }
+
+  #teardown() {
+    this.#observer?.disconnect();
+    this.#observer = undefined;
+    this.#chart?.dispose();
+    this.#chart = undefined;
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    removeEventListener(SCHEME_CHANGE, this.#onScheme);
+    this.#teardown();
+  }
+}
+customElements.define('app-echart', AppEChart);
+
+// --- marked setup ------------------------------------------------- //
+// Two renderer overrides, the same mechanism aimed at different tokens: one
+// turns an ```echarts fence into an element, the other restores heading ids,
+// which marked v15 no longer emits, so the sidebar anchors resolve.
+
+function createMarkedParser() {
+  const marked = new Marked();
+  marked.use({
+    renderer: {
+      code({ text, lang }) {
+        if (lang !== 'echarts') return false;   // false = use the default renderer
+        return `<app-echart config="${encodeURIComponent(text.trim())}"></app-echart>\n`;
+      },
+      // A shorthand method, not an arrow, so `this` is the renderer and
+      // `this.parser` exists.
+      heading({ tokens, depth }) {
+        const text = this.parser.parseInline(tokens);
+        const id = text
+          .replace(/<[^>]+>/g, '')       // inline markup, e.g. <code> in a heading
+          .toLowerCase()
+          .replace(/[^\w]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+      },
+    },
+  });
+  return marked;
+}
+const markdownParser = createMarkedParser();
+
+// --- <app-markdown> ----------------------------------------------- //
+
+class AppMarkdown extends LitElement {
+  static properties = { content: { type: String } };
+
+  // Light DOM, so wa-prose's descendant selectors reach the generated
+  // headings, lists and tables. Content still arrives as a property and
+  // render() is still synchronous, which is what keeps a server render open.
+  createRenderRoot() { return this; }
+
+  constructor() {
+    super();
+    this.content = '';
+  }
+
+  render() {
+    if (!this.content) return html``;
+    return html`${unsafeHTML(markdownParser.parse(this.content))}`;
+  }
+}
+customElements.define('app-markdown', AppMarkdown);
+
+// --- color scheme toggle ------------------------------------------ //
+
+document.getElementById('scheme').addEventListener('click', (e) => {
+  const root = document.documentElement;
+  const dark = root.classList.toggle('wa-dark');
+  root.classList.toggle('wa-light', !dark);
+  e.currentTarget.querySelector('wa-icon').name = dark ? 'sun' : 'moon';
+  dispatchEvent(new CustomEvent(SCHEME_CHANGE));
+});
+
+// --- the demo document -------------------------------------------- //
+// Fences are escaped as \` only because this lives in a template literal.
+
+const DOC = `
+# Markdown Charts
+
+Everything below is one markdown string. Prose becomes prose, an \`echarts\`
+fence becomes a live chart, and every other fence stays code. The page around
+it -- sidebar, header, typography, dark mode -- is Web Awesome's defaults, and
+the charts now follow the theme with it.
+
+## Throughput
+
+The first chart, written as strict JSON. Nothing in the fence knows it is on a
+Web Awesome page, or which color scheme is showing.
+
+\`\`\`echarts
+{
+  "title": { "text": "Monthly Throughput" },
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar", "Apr", "May"] },
+  "yAxis": { "type": "value" },
+  "series": [{ "data": [150, 230, 224, 218, 135], "type": "line" }]
+}
+\`\`\`
+
+## By region
+
+The same fence, written as a JS object literal instead: unquoted keys, a
+trailing comma, and a comment. This is the shape you actually want to type.
+
+\`\`\`echarts
+{
+  title: { text: 'Requests by Region' },
+  tooltip: {},
+  xAxis: { type: 'category', data: ['us-east', 'us-west', 'eu', 'apac'] },
+  yAxis: { type: 'value' },
+  series: [
+    // one bar per region
+    { type: 'bar', data: [820, 432, 601, 294] },
+  ],
+}
+\`\`\`
+
+## A thousand points
+
+The fence generates its own data rather than listing a thousand numbers, and
+opens zoomed to the first fifth so the slider visibly has somewhere to go.
+
+\`\`\`echarts
+{
+  title: { text: '1000 Samples' },
+  tooltip: { trigger: 'axis' },
+  xAxis: {
+    type: 'category',
+    boundaryGap: false,
+    data: Array.from({ length: 1000 }, (_, i) => i),
+  },
+  yAxis: { type: 'value', name: 'ms' },
+  dataZoom: [
+    { type: 'slider', xAxisIndex: 0, start: 0, end: 20 },
+    { type: 'inside', xAxisIndex: 0 },
+  ],
+  series: [{
+    type: 'line',
+    showSymbol: false,
+    sampling: 'lttb',
+    data: Array.from({ length: 1000 }, (_, i) =>
+      +(50 + 20 * Math.sin(i / 40) + 8 * Math.sin(i / 7) + 5 * Math.sin(i / 2.3)).toFixed(2)),
+  }],
+}
+\`\`\`
+
+## What the fence costs
+
+That generated data is worth being precise about, because it is not lenient
+parsing -- it is execution. Strict JSON is tried first; anything else is
+compiled and run.
+
+| Written as | Parsed by | Can generate data | Safe for untrusted input |
+| --- | --- | --- | --- |
+| Strict JSON | \`JSON.parse\` | no | yes |
+| JS object literal | \`Function\` | yes | no |
+
+The second row is an eval, and it trusts the markdown exactly as much as
+rendering that markdown to HTML already does. Fine for documents we author.
+Not fine for documents we receive.
+
+An ordinary fence is untouched, which is how you can tell the interception is
+narrow:
+
+\`\`\`js
+code({ text, lang }) {
+  if (lang !== 'echarts') return false;   // fall through to the default
+  return \`<app-echart config="\${encodeURIComponent(text)}"></app-echart>\`;
+}
+\`\`\`
+
+## When a chart fails
+
+> A broken chart should cost you the chart, not the page.
+
+The fence below is invalid in both dialects. It renders as an error in place,
+and everything after it -- this sentence included -- is unaffected.
+
+\`\`\`echarts
+{ this is not valid in any dialect ]]
+\`\`\`
+
+Which is the last thing worth proving before any of this touches real data.
+`;
+
+document.querySelector('app-markdown').content = DOC;
+</script>
+
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "chartdown",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Markdown documents with live ECharts fences, on a Web Awesome page.",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "build": "bun run clean && bun run build:js && bun run build:css && bun run build:pages",
+    "clean": "rm -rf dist",
+    "build:pages": "bun site/build.js",
+    "build:js": "bun build site/app.js --outdir=dist --splitting --format=esm --minify --sourcemap=linked",
+    "build:css": "bun build site/app.css --outdir=dist --minify",
+    "serve": "python3 -m http.server 8080 --bind 127.0.0.1"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.11.0",
+    "echarts": "6.1.0",
+    "lit": "3.3.3",
+    "marked": "15.0.12"
+  }
+}
