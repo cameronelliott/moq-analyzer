@@ -1,0 +1,12 @@
+/* Web Awesome's sheet, plus the one rule chartdown's elements require. */
+
+@import "@awesome.me/webawesome/dist/styles/webawesome.css";
+@import "../lib/components.css";
+
+/* FOUC: SSR'd components carry did-ssr and are already painted. Hide only the
+   ones that did not, so an un-SSR'd component does not flash unstyled.
+   From https://webawesome.com/docs/ssr/ */
+:not([did-ssr]):not(:defined) { visibility: hidden; }
+
+body { max-width: 60rem; margin: 0 auto; padding: 2rem; }
+header { display: flex; justify-content: space-between; align-items: center; }

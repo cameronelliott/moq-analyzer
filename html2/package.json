@@ -1,0 +1,27 @@
+{
+  "name": "html2",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "bun run clean && bun run build:pages && bun run build:js && bun run build:css",
+    "build:pages": "bunx @11ty/eleventy",
+    "build:js": "bun build site/app.js site/app-live.js --outdir=dist --splitting --format=esm --production --sourcemap=linked",
+    "build:css": "bun build site/app.css --outdir=dist --minify",
+    "serve": "python3 -m http.server 8080 --bind 127.0.0.1 --directory dist"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.6",
+    "@lit-labs/eleventy-plugin-lit": "1.0.6",
+    "@lit-labs/ssr-client": "1.1.8",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.13.0",
+    "lit": "3.3.3",
+    "marked": "18.0.14"
+  }
+}
