@@ -20,6 +20,27 @@ import { shell } from './site/_shell.js';
 const renderer = createMarkdownRenderer();
 
 export default function (eleventyConfig) {
+  // Eleventy does not bundle, so JS and CSS are bun build's job -- but a dev
+  // server that rebuilds pages and not bundles serves stale scripts, which is
+  // worse than not serving them. Hooking the bundle onto Eleventy's own build
+  // event makes `--serve` a real watch/build/serve in one process.
+  //
+  // Shelling out to the package scripts rather than calling Bun.build() keeps
+  // package.json the single place the bundler flags are written -- notably
+  // --production, without which bun resolves lit's `development` export
+  // condition and ships dev-mode lit.
+  eleventyConfig.on('eleventy.before', async () => {
+    await Bun.$`bun run build:js`.quiet();
+    await Bun.$`bun run build:css`.quiet();
+  });
+
+  // Eleventy watches templates and data. These are neither, so it has to be
+  // told, or editing a component never triggers a rebuild.
+  eleventyConfig.addWatchTarget('./lib/');
+  eleventyConfig.addWatchTarget('./site/app.js');
+  eleventyConfig.addWatchTarget('./site/app-live.js');
+  eleventyConfig.addWatchTarget('./site/app.css');
+
   // Server-renders the wa-* elements the shell emits into declarative shadow
   // DOM. <app-markdown> is deliberately absent: it is light DOM, lit-ssr
   // supports shadow DOM only, and the static page does not need it because the

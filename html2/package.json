@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "bun run clean && bun run build:pages && bun run build:js && bun run build:css",
-    "build:pages": "bunx @11ty/eleventy",
+    "build": "bun run clean && bunx @11ty/eleventy",
+    "dev": "bunx @11ty/eleventy --serve",
     "build:js": "bun build site/app.js site/app-live.js --outdir=dist --splitting --format=esm --production --sourcemap=linked",
     "build:css": "bun build site/app.css --outdir=dist --minify",
     "serve": "python3 -m http.server 8080 --bind 127.0.0.1 --directory dist"

@@ -5,16 +5,20 @@ Answers step 1 of `BRIEF.md`. See that file for what this is and why.
 ## Run it
 
     bun install
-    bun run build          # eleventy -> dist/, then bun build for JS and CSS
-    bun run serve          # http://127.0.0.1:8080
+    bun run build          # clean, then eleventy -> dist/
+    bun run dev            # watch + build + serve, http://localhost:8080
 
-Dev loop, with watch and live reload:
+`bun run dev` is the whole loop in one process. Eleventy does not bundle, so
+`bun build` is hooked onto its `eleventy.before` event and runs on every
+rebuild; `lib/`, `site/app*.js` and `site/app.css` are registered as watch
+targets so editing a component rebuilds too. Add `--port 8000` to move it.
 
-    bun run build          # once, for app.js / app.css
-    bunx @11ty/eleventy --serve
+**Run it from `html2/`.** Eleventy finds `eleventy.config.js` by cwd. Started
+from anywhere else it falls back to input `.` and output `_site`, and will
+happily render whatever directory it is standing in.
 
-`--serve` rebuilds pages only, not the bundles, so run `bun run build` first or
-they 404.
+`bun run serve` is a plain static server over `dist/`, for measuring without a
+live-reload socket in the way.
 
 ## What is on the page
 
