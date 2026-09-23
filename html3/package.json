@@ -1,0 +1,23 @@
+{
+  "name": "html3",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "eleventy",
+    "dev": "eleventy --serve --port=8081"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.6",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.13.0",
+    "echarts": "6.1.0",
+    "lit": "^3.3.3",
+    "markdown-it-anchor": "^10.0.0"
+  }
+}

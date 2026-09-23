@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/wa/styles/webawesome.css">
+  <style>
+    /* For the no-JS view: until app-echart upgrades, it is an unknown inline
+       element holding the build's SVG. */
+    app-echart:not(:defined) { display: block; margin-block: var(--wa-space-l); }
+    app-echart:not(:defined) > svg { display: block; width: 100%; height: auto; }
+  </style>
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <article class="wa-prose">
+{{ content }}
+  </article>
+</body>
+</html>
