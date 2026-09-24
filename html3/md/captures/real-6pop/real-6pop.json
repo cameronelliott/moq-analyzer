@@ -1,0 +1,16 @@
+{
+  "capture": {
+    "id": "real-6pop",
+    "title": "Six-POP run",
+    "summary": "one publisher, one relay, four subscribers. Dummy data.",
+    "details": [
+      ["Captured", "9/17/2026, 1:00 PM UTC"],
+      ["Relay", "moq-relay"],
+      ["Connections", "5 (1 publisher, 4 subscribers)"],
+      ["Traces", "10 mlogs, both ends of each connection"],
+      ["Tracks", "0.mp4, video, audio"],
+      ["Format", "moq-rs mlog"],
+      ["Data", "Dummy, for layout only"]
+    ]
+  }
+}

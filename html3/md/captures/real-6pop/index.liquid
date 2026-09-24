@@ -1,0 +1,219 @@
+---
+title: Overview
+order: 1
+layout: dashboard.liquid
+---
+<h1>Overview</h1>
+
+<p>One publisher sends through one relay to four subscribers, and every
+connection was logged at both ends. <strong>All numbers on these pages are
+dummy data</strong>, shaped like the real six-POP captures so the layout can be
+judged.</p>
+
+<dl class="stats wa-grid wa-gap-l">
+  <div class="wa-stack wa-gap-3xs">
+    <dt class="wa-caption-m">Duration</dt>
+    <dd class="wa-heading-xl">12 min 40 s</dd>
+  </div>
+  <div class="wa-stack wa-gap-3xs">
+    <dt class="wa-caption-m">Objects sent</dt>
+    <dd class="wa-heading-xl">50,112</dd>
+    <dd class="wa-caption-s">by the publisher</dd>
+  </div>
+  <div class="wa-stack wa-gap-3xs">
+    <dt class="wa-caption-m">Hops joined</dt>
+    <dd class="wa-heading-xl">300,996</dd>
+    <dd class="wa-caption-s">logged at both ends</dd>
+  </div>
+  <div class="wa-stack wa-gap-3xs">
+    <dt class="wa-caption-m">Held objects</dt>
+    <dd class="wa-heading-xl">62–88</dd>
+    <dd class="wa-caption-s">per subscriber, joined late</dd>
+  </div>
+</dl>
+
+<div class="tray wa-grid wa-gap-xs">
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">End to end</h2>
+      <wa-icon id="about-e2e" name="circle-info" label="About end to end" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-e2e">Mean time from the publisher creating an object to a subscriber parsing it, across all three legs.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">216.3 ms</span>
+      <span class="wa-caption-m">at sub-4, the slowest. sub-2 took 87.8 ms.</span>
+    </div>
+{% echart '150px', 'card' %}
+{
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  xAxis: { type: 'value' },
+  yAxis: { type: 'category', data: ['sub-4', 'sub-3', 'sub-2', 'sub-1'] },
+  // Last leg first: the one that varies sits on the baseline, where bars
+  // compare directly, and takes the card's blue.
+  series: [
+    { name: 'relay -> sub', type: 'bar', stack: 'leg', data: [140.2, 88.1, 12.4, 55.8] },
+    { name: 'relay dwell',  type: 'bar', stack: 'leg', data: [1.2, 3.1, 0.5, 1.9] },
+    { name: 'pub -> relay', type: 'bar', stack: 'leg', data: [74.9, 75.0, 74.9, 74.9] },
+  ],
+}
+{% endechart %}
+    <div class="card-foot wa-split wa-caption-s">
+      <span>Blue: relay to subscriber</span>
+      <a href="latency/">Latency</a>
+    </div>
+  </section>
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">Relay dwell</h2>
+      <wa-icon id="about-dwell" name="circle-info" label="About relay dwell" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-dwell">Time an object spends inside the relay, from arriving to being sent on.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">3.1 ms</span>
+      <span class="wa-caption-m">mean at sub-3. Its median is 0.43 ms.</span>
+    </div>
+{% echart '150px', 'card' %}
+{
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  xAxis: { type: 'category', data: ['sub-1', 'sub-2', 'sub-3', 'sub-4'] },
+  yAxis: { type: 'value' },
+  series: [
+    { name: 'mean',   type: 'bar', data: [1.9, 0.5, 3.1, 1.2] },
+    { name: 'median', type: 'bar', data: [0.31, 0.26, 0.43, 0.29] },
+  ],
+}
+{% endechart %}
+    <div class="card-foot wa-split wa-caption-s">
+      <span>Blue: mean. Gray: median.</span>
+      <a href="latency/">Latency</a>
+    </div>
+  </section>
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">Delivery</h2>
+      <wa-icon id="about-delivery" name="circle-info" label="About delivery" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-delivery">An object is lost only if both ends were still logging when it was sent. One sent after a subscriber's log stopped is outside the window, not lost.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">0 lost</span>
+      <span class="wa-caption-m">of 203,416 objects the relay sent to four subscribers.</span>
+    </div>
+    <div class="bar" role="img" aria-label="98.5% joined, 1.5% outside the window, none lost">
+      <span class="success" style="flex-grow: 200402">98.5%</span>
+      <span class="neutral" style="flex-grow: 3014"></span>
+    </div>
+    <ul class="rows">
+      <li><span class="dot success"></span>Joined<span>200,402</span></li>
+      <li><span class="dot neutral"></span>Outside the window<span>3,014</span></li>
+      <li><span class="dot danger"></span>Lost<span>0</span></li>
+    </ul>
+    <div class="card-foot wa-split wa-caption-s">
+      <span>Counted at both ends</span>
+      <a href="connections/">Connections</a>
+    </div>
+  </section>
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">Throughput</h2>
+      <wa-icon id="about-throughput" name="circle-info" label="About throughput" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-throughput">Media payload bytes per second at the subscriber: no QUIC or MoQ framing, no retransmissions.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">2.52 Mbit/s</span>
+      <span class="wa-caption-m">video at sub-1, first minute. Audio is 128 kbit/s.</span>
+    </div>
+{% echart '150px', 'card' %}
+{
+  tooltip: { trigger: 'axis' },
+  xAxis: {
+    type: 'category',
+    boundaryGap: false,
+    axisLabel: { interval: 9 },
+    data: Array.from({ length: 60 }, (_, i) => i),
+  },
+  // The data is kbit/s; the axis reads in Mbit/s, like the number above it.
+  yAxis: { type: 'value', axisLabel: { formatter: (v) => v / 1000 } },
+  series: [
+    {
+      name: 'video', type: 'line', showSymbol: false,
+      data: Array.from({ length: 60 }, (_, i) =>
+        Math.round(2400 + 300 * Math.sin(i / 4) + (i % 10 === 0 ? 900 : 0))),
+    },
+    {
+      name: 'audio', type: 'line', showSymbol: false,
+      data: Array.from({ length: 60 }, (_, i) => Math.round(128 + 4 * Math.sin(i))),
+    },
+  ],
+}
+{% endechart %}
+    <div class="card-foot wa-split wa-caption-s">
+      <span>Mbit/s. Blue: video.</span>
+      <a href="throughput/">Throughput</a>
+    </div>
+  </section>
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">Interarrival</h2>
+      <wa-icon id="about-interarrival" name="circle-info" label="About interarrival" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-interarrival">Gap between an object arriving and the one before it on the same track. rtcstats calls this latency; webrtc-internals calls it jitter.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">33.4 ms</span>
+      <span class="wa-caption-m">median video gap at sub-1. sub-3 peaks at 108.3 ms.</span>
+    </div>
+{% echart '150px', 'card' %}
+{
+  tooltip: { trigger: 'axis' },
+  xAxis: {
+    type: 'category',
+    boundaryGap: false,
+    axisLabel: { interval: 99 },
+    data: Array.from({ length: 600 }, (_, i) => i),
+  },
+  yAxis: { type: 'value' },
+  series: [
+    {
+      // Drawn over sub-3, which it would otherwise sit under.
+      name: 'sub-1', type: 'line', showSymbol: false, sampling: 'lttb', z: 3,
+      data: Array.from({ length: 600 }, (_, i) =>
+        +(33.3 + 2.5 * Math.sin(i / 3.1) + (i % 97 === 0 ? 40 : 0)).toFixed(1)),
+    },
+    {
+      name: 'sub-3', type: 'line', showSymbol: false, sampling: 'lttb',
+      data: Array.from({ length: 600 }, (_, i) =>
+        +(33.3 + 5 * Math.sin(i / 1.7) + (i % 61 === 0 ? 70 : 0)).toFixed(1)),
+    },
+  ],
+}
+{% endechart %}
+    <div class="card-foot wa-split wa-caption-s">
+      <span>ms by object. Blue: sub-1.</span>
+      <a href="interarrival/">Interarrival</a>
+    </div>
+  </section>
+
+  <section class="card wa-stack">
+    <div class="wa-cluster wa-gap-xs">
+      <h2 class="wa-heading-m">Clocks</h2>
+      <wa-icon id="about-clocks" name="circle-info" label="About clocks" tabindex="0"></wa-icon>
+      <wa-tooltip for="about-clocks">A negative hop is an object logged as arriving before it was sent. Only clock error produces one.</wa-tooltip>
+    </div>
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">0</span>
+      <span class="wa-caption-m">negative hops in 300,996.</span>
+    </div>
+    <p class="wa-body-s">That rules out clock error larger than the transit time, and
+    nothing finer. These captures hold reference time error under 10 µs because
+    of how they were made, not because the data shows it.</p>
+    <div class="card-foot wa-split wa-caption-s">
+      <span>Both ends of every hop</span>
+      <a href="connections/">Connections</a>
+    </div>
+  </section>
+
+</div>

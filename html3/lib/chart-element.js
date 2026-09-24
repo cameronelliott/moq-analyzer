@@ -58,6 +58,8 @@ class AppEChart extends LitElement {
     // JSON-parsing an attribute here would put the eval back by another name.
     option: { attribute: false },
     height: { type: String },
+    // Which page defaults apply: 'prose' or 'card'. See withDefaults.
+    variant: { type: String },
     error:  { state: true },
     // True once the canvas has drawn; until then the build's SVG shows.
     drawn:  { state: true },
@@ -83,6 +85,7 @@ class AppEChart extends LitElement {
     this.config = '';
     this.option = undefined;
     this.height = '350px';
+    this.variant = 'prose';
     this.error = '';
     this.drawn = false;
   }
@@ -123,7 +126,7 @@ class AppEChart extends LitElement {
   // since a failed build sets `error`, which is itself a change.
   updated(changed) {
     super.updated(changed);
-    if (!changed.has('option') && !changed.has('config') && !changed.has('height')) return;
+    if (!['option', 'config', 'height', 'variant'].some((p) => changed.has(p))) return;
     // A new option object is a new chart. Rebuilding rather than merging keeps
     // this honest: ECharts' setOption merges by default, so feeding it a
     // smaller option would leave the previous one's series behind.
@@ -152,8 +155,9 @@ class AppEChart extends LitElement {
       assertRegistered(this.#resolved, this.#echarts.REGISTERED_SERIES);
 
       // A theme is fixed at init, so following the page means building again.
-      this.#chart = this.#echarts.init(el, isDark() ? 'dark' : undefined);
-      this.#chart.setOption(withDefaults(this.#resolved));
+      const dark = isDark();
+      this.#chart = this.#echarts.init(el, dark ? 'dark' : undefined);
+      this.#chart.setOption(withDefaults(this.#resolved, this.variant, { dark }));
       this.drawn = true;
 
       this.#observer = new ResizeObserver(() => this.#chart?.resize());

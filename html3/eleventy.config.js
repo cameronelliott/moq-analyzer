@@ -9,8 +9,9 @@ export default function (eleventyConfig) {
   eleventyConfig.amendLibrary('md', (md) =>
     md.use(anchor, { slugify: eleventyConfig.getFilter('slugify') }));
 
-  eleventyConfig.addPairedShortcode('echart', (body, height = '350px') =>
-    renderChart(body, height, REGISTERED_SERIES));
+  // {% echart %}, {% echart '300px' %}, or {% echart '150px', 'card' %}.
+  eleventyConfig.addPairedShortcode('echart', (body, height = '350px', variant = 'prose') =>
+    renderChart(body, height, REGISTERED_SERIES, variant));
 
   // Eleventy does not bundle, and --serve rebuilds pages only, so the bundle is
   // built here on every build and the sources are watched. --production makes
@@ -22,6 +23,12 @@ export default function (eleventyConfig) {
   });
   eleventyConfig.addWatchTarget('lib/');
   eleventyConfig.addWatchTarget('site/');
+
+  // A capture's views, in sidebar order. Every capture's views land in one
+  // collection; the layout keeps those whose capture.id matches the page's.
+  eleventyConfig.addCollection('views', (api) => api.getAll()
+    .filter((item) => item.data.capture)
+    .sort((a, b) => a.data.order - b.data.order));
 
   eleventyConfig.addPassthroughCopy({
     'node_modules/@awesome.me/webawesome/dist-cdn/styles': 'wa/styles',

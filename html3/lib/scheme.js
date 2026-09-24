@@ -6,9 +6,13 @@
 // job: nothing has to announce the flip, and nothing has to be told where to
 // listen.
 //
-// Its own file because the chart element needs it and the markdown element does
-// not. A page that renders no markdown should not pull a markdown parser into
-// its bundle just to follow the theme.
+// The reader picks 'light', 'dark' or 'auto', kept in localStorage; auto
+// follows the system setting, live. An inline script in base.liquid's <head>
+// repeats applyScheme's rule before first paint, so a dark page never flashes
+// light while this module loads. Keep the two in step.
+
+const KEY = 'scheme';
+const SYSTEM_DARK = '(prefers-color-scheme: dark)';
 
 /** True while the page is showing Web Awesome's dark scheme. */
 export const isDark = () => document.documentElement.classList.contains('wa-dark');
@@ -27,14 +31,48 @@ export function watchScheme(onChange) {
   return () => observer.disconnect();
 }
 
+/** The stored preference, 'auto' when there is none or storage is blocked. */
+export function storedScheme() {
+  try {
+    const stored = localStorage.getItem(KEY);
+    return stored === 'light' || stored === 'dark' ? stored : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+/** Sets <html>'s two scheme classes for a preference. */
+export function applyScheme(preference) {
+  const dark = preference === 'dark'
+    || (preference === 'auto' && matchMedia(SYSTEM_DARK).matches);
+  const root = document.documentElement;
+  root.classList.toggle('wa-dark', dark);
+  root.classList.toggle('wa-light', !dark);
+}
+
 /**
- * Wires a button to flip the scheme. It sets two classes and stops there --
- * the icon is CSS, and whatever else needs to follow is watching.
+ * Wires radio inputs valued 'light', 'dark' and 'auto' to the preference:
+ * checks the stored one, stores and applies a new pick, and follows the system
+ * while on auto. It sets classes and stops there -- whatever else needs to
+ * follow is watching.
  */
-export function installSchemeToggle(button) {
-  button.addEventListener('click', () => {
-    const root = document.documentElement;
-    const dark = root.classList.toggle('wa-dark');
-    root.classList.toggle('wa-light', !dark);
+export function installSchemeSwitch(container) {
+  let preference = storedScheme();
+  for (const radio of container.querySelectorAll('input[type=radio]')) {
+    radio.checked = radio.value === preference;
+  }
+
+  container.addEventListener('change', (event) => {
+    preference = event.target.value;
+    try {
+      localStorage.setItem(KEY, preference);
+    } catch {
+      // Blocked storage: the pick still holds for this page.
+    }
+    applyScheme(preference);
+  });
+
+  matchMedia(SYSTEM_DARK).addEventListener('change', () => {
+    if (preference === 'auto') applyScheme('auto');
   });
 }

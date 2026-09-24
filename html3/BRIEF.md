@@ -18,6 +18,16 @@ item was measured, not read.
   syntax (`:::chart` is a proposal markdown-it does not ship).
 - **No `<is-land>`.** See below: with a build-time SVG there is nothing to defer
   that a dynamic `import()` does not already defer in one line.
+- **Content in the HTML, not no-JS.** The words and numbers a page states are
+  in the HTML the build writes; layout, charts and interaction may need JS.
+  Crawlers that run no JS read the first. Nobody browses with JS off, and
+  `wa-page` and the drop-files tool need JS anyway. So on a showcase page: no
+  `wa-format-number` for a number the page states, no `wa-include`, no
+  fragments fetched in the browser.
+- **Two layouts on one shell.** `base.liquid` is the shell. `page.liquid` wraps
+  markdown views in `wa-prose`; `dashboard.liquid` does not. A dashboard is a
+  `.liquid` template, not markdown: it is nearly all HTML, and markdown-it ends
+  an HTML block at the first blank line.
 - **Ask before installing anything.**
 
 ## Heading ids
@@ -93,10 +103,16 @@ the shortcode must parse the same way: strict JSON first, then `Function()`.
 | 1000-point line | 14,302 | 3,655 |
 | the ECharts runtime, for contrast | 631K | 179K brotli |
 
-The SVG carries real `<text>` nodes with the axis labels and data in them. This
-**closes the one hole `../html` and `../html2` both have** — prose is readable
-with JS off, but charts are blank tags. Density does not blow it up, because
-`sampling: 'lttb'` downsamples before drawing.
+The SVG carries real `<text>` nodes with the axis labels and data in them, so a
+chart's words are in the HTML like the prose around it, and the chart shows
+before the ECharts chunk loads. Density does not blow it up, because
+`sampling: 'lttb'` downsamples before drawing. The content rule does not
+require it: keep it while it costs nothing, drop it the first time it does.
+
+**Card charts:** `{% echart '150px', 'card' %}`. ECharts' default grid leaves a
+150px chart a 17px plot, so the `card` variant sets a tight grid, a blue and
+gray palette with a dark counterpart, and draws the SVG 360 wide: drawn at 720
+and shrunk into a card, 12px labels come out at 5px.
 
 The build may import all of `echarts` freely; tree-shaking only matters for what
 ships to the browser.
@@ -160,6 +176,27 @@ and rendering a broken chart as an error in place instead of killing the page.
 - `<wa-icon>` resolves to a Font Awesome CDN URL at runtime, and `wa-page` uses
   one for its mobile menu button. Override the icon library or accept the extra
   origin.
+- **`wa-prose` caps its element at 65ch.** `.wa-not-prose` exempts a subtree
+  from its styles but not from the cap, which is why a dashboard has its own
+  layout.
+- Native styles indent every `li` by `1.125em` (`margin-inline-start`). A list
+  drawn as rows needs `margin: 0` on the `li`, not only on the `ul`.
+- `wa-format-number` draws the number in its shadow root. The page's HTML holds
+  only the raw `value` attribute.
+- `wa-tooltip` costs 41K raw, 13K gzip: it brings popup and floating-ui.
+
+## Color scheme
+
+- **Light, dark, auto**, stored in `localStorage.scheme`. Auto follows the
+  system setting, live.
+- An inline script in `base.liquid`'s `<head>` sets `wa-dark` or `wa-light`
+  before first paint, so a dark page never flashes light. `applyScheme` in
+  `lib/scheme.js` has the same rule; keep the two in step.
+- The switch is three native radios in a fieldset, not `wa-dropdown` or
+  `wa-radio-group`: the same job at no bundle cost.
+- Charts follow by watching `<html>`'s class. `app-echart` redraws with the
+  'dark' ECharts theme and, for a card, `CARD_DARK`. The build's SVG is light
+  only, so a dark page shows light SVG until the canvas draws.
 
 ## ECharts — for `app-echart`
 
@@ -179,7 +216,12 @@ and rendering a broken chart as an error in place instead of killing the page.
 
 ## How to verify
 
-- `curl` for the no-JS view. `--dump-dom` runs JavaScript, so it cannot test it.
+- `curl` shows the HTML the build wrote: check that the page's words and
+  numbers are in it. `--dump-dom` runs JavaScript, so it cannot.
+- Headless `--screenshot` writes nothing with scripts disabled. To see a page
+  without the bundle, serve a copy with the `app.js` script tag removed.
+- `--force-dark-mode` makes headless Chromium report a dark system, for
+  testing auto.
 - Shadow DOM is not in `--dump-dom`. Append a probe script, read `shadowRoot`,
   write findings into `document.title`, read the title out.
 - Resource timing caps at **250 entries** — any count of exactly 250 is the cap.
@@ -197,8 +239,8 @@ and rendering a broken chart as an error in place instead of killing the page.
 | without JS | prose, heading ids, nav, tables all present — **charts are blank tags** |
 | machinery | 905 lines |
 
-With no markdown parser in the bundle and no SSR client, `app.js` should come in
-well under 181K — that is the number the simple plan is betting on.
+**Budget: `app.js` under 250K raw.** It was 216K raw, 57K gzip on 2026-09-23:
+Lit, `wa-page`, `wa-tooltip`, the chart element and the scheme switch.
 
-The row to actually beat is the last one. Build-time SVG puts charts in the HTML
-for ~1–4K gzip each, which is something neither `../html` nor `../html2` does.
+Build-time SVG puts charts in the HTML for ~1–4K gzip each, which neither
+`../html` nor `../html2` does.

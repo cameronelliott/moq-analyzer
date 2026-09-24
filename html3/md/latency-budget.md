@@ -1,5 +1,6 @@
 ---
 title: Latency Budget
+tags: doc
 ---
 
 # Latency Budget

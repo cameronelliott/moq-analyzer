@@ -1,5 +1,6 @@
 ---
 title: Markdown Charts
+tags: doc
 ---
 
 # Markdown Charts

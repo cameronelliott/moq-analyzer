@@ -50,16 +50,50 @@ export function assertRegistered(option, registered) {
 // provider registers LegacyGridContainLabel.
 export const PROSE_GRID = { left: '1%', containLabel: true };
 
-/** Page defaults under the fence's own option, so a fence can always override. */
-export function withDefaults(option) {
+// A chart in a dashboard card. The card's title and caption do the legend's and
+// the axis names' work, so the plot takes the whole box; ECharts' default grid
+// leaves a 150px chart a 17px plot. The small right and bottom margins are for
+// what containLabel does not quite contain: the last value on an x axis, and
+// the descenders of the labels under it.
+//
+// The colors are literals because the build draws the same chart with no
+// stylesheet to read tokens from: Web Awesome's default blue-50 for what the
+// card is about, then gray-60 and gray-80 for what it is compared against.
+export const CARD = {
+  grid: { left: 0, right: 12, top: 8, bottom: 6, containLabel: true },
+  color: ['#0071ec', '#9194a2', '#c7c9d0'],
+};
+
+// The same roles on a dark surface. Light grays would outshine the blue there,
+// so the comparison steps down to gray-50 and gray-30. The build draws light
+// only; this reaches a chart when <app-echart> redraws it on a dark page.
+export const CARD_DARK = { color: ['#0071ec', '#717584', '#424554'] };
+
+const VARIANTS = { prose: { grid: PROSE_GRID }, card: CARD };
+
+// Per variant, what changes on a dark page. Prose charts are left to the
+// 'dark' ECharts theme, whose default palette reads on both schemes.
+const DARK = { card: CARD_DARK };
+
+/**
+ * A variant's defaults under the fence's own option, so a fence can always
+ * override. Throws on a variant it does not know.
+ */
+export function withDefaults(option, variant = 'prose', { dark = false } = {}) {
+  if (!Object.hasOwn(VARIANTS, variant)) {
+    throw new Error(
+      `unknown chart variant: ${variant}. Known: ${Object.keys(VARIANTS).join(', ')}.`);
+  }
+  const { grid, ...defaults } = { ...VARIANTS[variant], ...(dark ? DARK[variant] : undefined) };
   return {
     backgroundColor: 'transparent',
+    ...defaults,
     ...option,
     // A shallow spread would drop the grid defaults the moment a fence set any
     // grid key of its own, so merge that one level deliberately.
     grid: Array.isArray(option.grid)
-      ? option.grid.map((g) => ({ ...PROSE_GRID, ...g }))
-      : { ...PROSE_GRID, ...option.grid },
+      ? option.grid.map((g) => ({ ...grid, ...g }))
+      : { ...grid, ...option.grid },
   };
 }
 

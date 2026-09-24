@@ -15,25 +15,28 @@ import { CHART_TAG, assertRegistered, parseChartOption, withDefaults } from './c
 echarts.use(LegacyGridContainLabel);
 
 // SSR needs pixels. The SVG gets a viewBox, so this sets the aspect ratio and
-// text scale rather than the size on the page: it stretches to the column.
-const SSR_WIDTH = 720;
+// text scale rather than the size on the page: it stretches to the column, or
+// the card. Drawn at 720 and shrunk into a 300px card, 12px labels would come
+// out at 5px, so each variant is drawn near the width it will be shown at.
+const SSR_WIDTH = { prose: 720, card: 360 };
 
 const escapeAttr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
 /**
- * Throws if the body parses in neither dialect, or draws a series type the
- * browser's ECharts build lacks. Either stops the build.
+ * Throws if the body parses in neither dialect, draws a series type the
+ * browser's ECharts build lacks, or names an unknown variant. Any of them stops
+ * the build.
  */
-export function renderChart(body, height, registered) {
+export function renderChart(body, height, registered, variant = 'prose') {
   const src = body.trim();
   const parsed = parseChartOption(src);
   assertRegistered(parsed, registered);
-  const option = withDefaults(parsed);
+  const option = withDefaults(parsed, variant);
 
   const chart = echarts.init(null, null, {
     renderer: 'svg',
     ssr: true,
-    width: SSR_WIDTH,
+    width: SSR_WIDTH[variant],
     height: parseInt(height, 10),
   });
   let svg;
@@ -56,7 +59,11 @@ export function renderChart(body, height, registered) {
     // the first one; everything after it becomes a paragraph.
     .replace(/\n[ \t]*(?=\n)/g, '');
 
+  // The element applies the same variant's defaults when it redraws. Prose is
+  // its default, so prose charts come out exactly as they did before variants.
+  const variantAttr = variant === 'prose' ? '' : ` variant="${escapeAttr(variant)}"`;
+
   // markdown-it only treats this as an HTML block if the open tag is alone on
   // its line; otherwise it wraps the SVG in <p>.
-  return `<${CHART_TAG} config="${escapeAttr(encodeURIComponent(src))}" height="${escapeAttr(height)}">\n${svg}\n</${CHART_TAG}>`;
+  return `<${CHART_TAG} config="${escapeAttr(encodeURIComponent(src))}" height="${escapeAttr(height)}"${variantAttr}>\n${svg}\n</${CHART_TAG}>`;
 }
