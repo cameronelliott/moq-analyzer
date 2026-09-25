@@ -10,6 +10,14 @@
   check says nothing about the browser -- wasm.test.ts is the check.
 - Tests are `bun test`. streaming.test.ts needs a local mlog.jsonl (gitignored).
 
+# incremental view maintenance (IVM)
+
+- if we support IVM it means summary data computation can run over new rows added (or changed), rather than summary data computation over the entire set of something
+- for streaming mode, IVM is not required, but if it's easy, we should do it, I mean incrementally computing summary data, etc, from batch set updates, not over the whole dataset. we shall see where this goes.
+
+
+
+
 # open, not decided
 
 **Round-tripping.** Should mlog json -> duckdb -> mlog json come back arguably
