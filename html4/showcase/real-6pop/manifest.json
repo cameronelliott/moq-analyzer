@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "id": "real-6pop",
+  "title": "Six-POP MoQ session: Tokyo to four continents through one relay",
+  "description": "One publisher in Tokyo sends through a relay in N. Virginia to subscribers in Ireland, São Paulo, Mumbai and Sydney. Each connection was logged at both ends.",
+  "traces": [
+    { "url": "a5163379d342db3bb2e10e6b3db6b598_client.mlog.gz", "cid": "a5163379d342db3bb2e10e6b3db6b598", "end": "client" },
+    { "url": "a5163379d342db3bb2e10e6b3db6b598_server.mlog.gz", "cid": "a5163379d342db3bb2e10e6b3db6b598", "end": "server" },
+    { "url": "c45a526b08ad99ea276b9813b0f66ac5_client.mlog.gz", "cid": "c45a526b08ad99ea276b9813b0f66ac5", "end": "client" },
+    { "url": "c45a526b08ad99ea276b9813b0f66ac5_server.mlog.gz", "cid": "c45a526b08ad99ea276b9813b0f66ac5", "end": "server" },
+    { "url": "cbdf0223f28262d1bd8e0ea465070b62_client.mlog.gz", "cid": "cbdf0223f28262d1bd8e0ea465070b62", "end": "client" },
+    { "url": "cbdf0223f28262d1bd8e0ea465070b62_server.mlog.gz", "cid": "cbdf0223f28262d1bd8e0ea465070b62", "end": "server" },
+    { "url": "d69664a3df26f06f765548d35e4115d2_client.mlog.gz", "cid": "d69664a3df26f06f765548d35e4115d2", "end": "client" },
+    { "url": "d69664a3df26f06f765548d35e4115d2_server.mlog.gz", "cid": "d69664a3df26f06f765548d35e4115d2", "end": "server" },
+    { "url": "fb8ac5324b8a68c291bea912edbc0bd0_client.mlog.gz", "cid": "fb8ac5324b8a68c291bea912edbc0bd0", "end": "client" },
+    { "url": "fb8ac5324b8a68c291bea912edbc0bd0_server.mlog.gz", "cid": "fb8ac5324b8a68c291bea912edbc0bd0", "end": "server" }
+  ],
+  "hosts": [
+    { "label": "Tokyo", "role": "publisher", "cid": "c45a526b08ad99ea276b9813b0f66ac5", "region": "ap-northeast-1", "airport": "NRT", "lat": 35.68, "lon": 139.69 },
+    { "label": "N. Virginia", "role": "relay", "cid": null, "region": "us-east-1", "airport": "IAD", "lat": 39.04, "lon": -77.49 },
+    { "label": "Ireland (sub1)", "role": "subscriber", "cid": "cbdf0223f28262d1bd8e0ea465070b62", "region": "eu-west-1", "airport": "DUB", "lat": 53.35, "lon": -6.26 },
+    { "label": "São Paulo (sub2)", "role": "subscriber", "cid": "a5163379d342db3bb2e10e6b3db6b598", "region": "sa-east-1", "airport": "GRU", "lat": -23.55, "lon": -46.63 },
+    { "label": "Sydney (sub3)", "role": "subscriber", "cid": "fb8ac5324b8a68c291bea912edbc0bd0", "region": "ap-southeast-2", "airport": "SYD", "lat": -33.87, "lon": 151.21 },
+    { "label": "Mumbai (sub4)", "role": "subscriber", "cid": "d69664a3df26f06f765548d35e4115d2", "region": "ap-south-1", "airport": "BOM", "lat": 19.08, "lon": 72.88 }
+  ]
+}
