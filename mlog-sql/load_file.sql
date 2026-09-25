@@ -28,9 +28,9 @@
 -- whichever of the two supplies it must be distinct enough to tell two captures
 -- apart.
 --
--- This is the browser's path for a whole file: register the bytes, load them.
--- load_lines.sql is for chunks arriving as text; see its header for which to
--- reach for.
+-- This is the only input path, whole file or chunked. For chunks, register each
+-- under its own src with the same trace_name, feed them in time order, and put
+-- the mlog header line in the first.
 --
 -- Lines are read as raw JSON rather than letting read_json_auto infer a schema.
 -- Inference unions the header line with the event lines and every event shape
@@ -66,10 +66,6 @@ WHERE CASE
                    || left(raw_line, 120))
     ELSE true
 END;
-
--- load_common.sql prints the drift report when `lines` is unset, so clear any
--- value left over from an earlier streamed load in the same session.
-SET VARIABLE lines = NULL;
 
 -- A file names itself unless the caller says otherwise. Both lines matter: the
 -- first assigns rather than defaults, so a filename left from an earlier load

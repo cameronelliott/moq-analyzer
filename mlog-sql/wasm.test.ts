@@ -242,10 +242,8 @@ test("a registered buffer loads in wasm and matches the CLI exactly", async () =
 });
 
 test("several registered buffers accumulate into one trace", async () => {
-    // The browser's streaming path. load_lines.sql would mean building a SQL
-    // string per chunk and doubling every quote; registering bytes avoids both,
-    // but src then changes per chunk while the trace's identity must not -- which
-    // is what trace_name is for.
+    // The browser's streaming path. src changes per chunk while the trace's
+    // identity must not -- which is what trace_name is for.
     const f = fixture();
     const lines = f.sender.trimEnd().split("\n");
     const db = await createDuckDB(

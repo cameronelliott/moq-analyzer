@@ -1,6 +1,5 @@
 -- Shared ingest body. Not run alone: it reads a `raw` view that an input file
--- defines first, so pass one of those ahead of it in the same invocation --
--- load_file.sql for a file, load_lines.sql for a string of lines.
+-- defines first, so pass load_file.sql ahead of it in the same invocation.
 --
 --   duckdb t.db -f mlog-sql/schema.sql -c "<variables>" \
 --     -f mlog-sql/load_file.sql -f mlog-sql/load_common.sql
@@ -21,10 +20,10 @@
 -- a browser caller that simply throws leaves the transaction open.
 --
 -- Expects:
---   filename  what this trace is filed under, and its identity. The input file
---             sets it: load_file.sql from the path it read, load_lines.sql from
---             the caller. trace_id is not an input -- the database assigns it and
---             this script resolves it from filename below.
+--   filename  what this trace is filed under, and its identity. load_file.sql
+--             sets it, from trace_name or else src. trace_id is not an input --
+--             the database assigns it and this script resolves it from filename
+--             below.
 --   cid       optional connection id, recorded on the trace row
 
 -- All or nothing: a failure partway through must not leave a half-loaded chunk.
@@ -251,11 +250,8 @@ COMMIT;
 -- Drift report. No rows means every shape in the log matched the baseline and
 -- every key was read. Any row is advisory: the ingest above has already
 -- committed, so this never blocks a load -- it is there for an operator to read
--- and judge.
---
--- Suppressed for streamed chunks, which would otherwise print it once per chunk;
--- those callers query shape_drift once at the end instead.
+-- and judge. A chunked load prints it once per chunk; query shape_drift once at
+-- the end instead.
 SELECT name, warning, lines, first_time_us, fingerprint
 FROM shape_drift
-WHERE trace_id = getvariable('trace_id')::USMALLINT
-  AND getvariable('lines') IS NULL;
+WHERE trace_id = getvariable('trace_id')::USMALLINT;

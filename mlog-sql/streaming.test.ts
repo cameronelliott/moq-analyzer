@@ -1,5 +1,5 @@
-// Proves load_lines.sql can ingest an mlog as a stream of chunks and land the
-// same database as load_file.sql ingesting the whole file at once.
+// Proves load_file.sql can ingest an mlog as a stream of chunks and land the
+// same database as ingesting the whole file at once.
 //   bun test streaming
 //
 // Chunking is where the loader's per-statement assumptions show up: the track
@@ -56,20 +56,19 @@ function loadFile(db: string, log: string) {
     ]);
 }
 
-/** Chunked ingest, all chunks through a single long-lived duckdb process. */
-function loadStream(db: string, lines: string[], chunkSize: number, srcName: string) {
-    const sql = [
-        `.read ${join(REPO, "schema.sql")}`,
-        `set variable filename='${srcName}';`,
-    ];
+/** Chunked ingest, all chunks through a single long-lived duckdb process. Each
+ *  chunk is its own file, standing in for a buffer the browser registers; the
+ *  constant trace_name is what makes them one trace. */
+function loadStream(db: string, lines: string[], chunkSize: number, traceName: string) {
+    const args = [db, "-f", join(REPO, "schema.sql")];
     for (let i = 0; i < lines.length; i += chunkSize) {
-        // lines reach DuckDB as SQL text, so single quotes must be doubled
-        const chunk = lines.slice(i, i + chunkSize).join("\n").replaceAll("'", "''");
-        sql.push(`set variable lines='${chunk}';`,
-            `.read ${join(REPO, "load_lines.sql")}`,
-            `.read ${join(REPO, "load_common.sql")}`);
+        const src = `${db}.chunk-${i}.jsonl`;
+        writeFileSync(src, lines.slice(i, i + chunkSize).join("\n") + "\n");
+        args.push("-c", `set variable src='${src}'; set variable trace_name='${traceName}';`,
+            "-f", join(REPO, "load_file.sql"),
+            "-f", join(REPO, "load_common.sql"));
     }
-    duck([db], sql.join("\n") + "\n");
+    duck(args);
 }
 
 type Diff = { tbl: string; only_stream: number; only_file: number };
