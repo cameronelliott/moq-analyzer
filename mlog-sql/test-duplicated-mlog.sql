@@ -5,7 +5,7 @@
 -- No rows means clean. Every check returns rows only when it finds something,
 -- so the whole file is quiet on a healthy database.
 --
--- Why this exists: chunks fed through load_file.sql are not replay-protected.
+-- Why this exists: chunks fed through load.sql are not replay-protected.
 -- control_message, subgroup_object and event_other carry no primary key, so a
 -- re-fed chunk silently duplicates their rows and inflates shape.n. (trace,
 -- track and subgroup_stream cannot duplicate -- their primary keys reject it,

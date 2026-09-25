@@ -123,8 +123,7 @@ window.__done = (async () => {
     const conn = await db.connect();
     await conn.query(await text('/sql/schema.sql'));
     await conn.query("SET VARIABLE src = 'sender.mlog';");
-    await conn.query(await text('/sql/load_file.sql'));
-    await conn.query(await text('/sql/load_common.sql'));
+    await conn.query(await text('/sql/load.sql'));
 
     const rows = (await conn.query(await text('/sql/summary.sql'))).toArray()
         .map((r) => r.toJSON());
@@ -228,8 +227,7 @@ test("a File is ingested through BROWSER_FILEREADER, matching the CLI", async ()
         "/duckdb.mjs": { body: duckdbJs, type: "text/javascript" },
         "/fixture.mlog": { body: log, type: "application/octet-stream" },
         "/sql/schema.sql": { body: sqlText("schema.sql"), type: "text/plain" },
-        "/sql/load_file.sql": { body: sqlText("load_file.sql"), type: "text/plain" },
-        "/sql/load_common.sql": { body: sqlText("load_common.sql"), type: "text/plain" },
+        "/sql/load.sql": { body: sqlText("load.sql"), type: "text/plain" },
         "/sql/summary.sql": { body: SUMMARY, type: "text/plain" },
     });
     const profile = mkdtempSync(join(tmpdir(), "mlog-chromium-"));
@@ -309,8 +307,7 @@ test("a File is ingested through BROWSER_FILEREADER, matching the CLI", async ()
                     "duckdb", db,
                     "-f", join(REPO, "schema.sql"),
                     "-c", `SET VARIABLE src = '${path}'; SET VARIABLE trace_name = 'sender.mlog';`,
-                    "-f", join(REPO, "load_file.sql"),
-                    "-f", join(REPO, "load_common.sql"),
+                    "-f", join(REPO, "load.sql"),
                 ]);
                 if (load.exitCode !== 0) throw new Error(load.stderr.toString());
                 const q = Bun.spawnSync(["duckdb", "-json", db, "-c", SUMMARY]);

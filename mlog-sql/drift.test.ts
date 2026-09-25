@@ -1,7 +1,7 @@
 // Proves the `shape` table catches JSON schema drift in moq-rs mlogs.
 //   bun test
 //
-// Each case builds a small mlog fixture, runs schema.sql + load_file.sql + load_common.sql over it
+// Each case builds a small mlog fixture, runs schema.sql + load.sql over it
 // with the real duckdb CLI, and inspects what the loader recorded.
 
 import { test, expect } from "bun:test";
@@ -159,8 +159,7 @@ function run(events: unknown[], opts: RunOpts = {}) {
             "duckdb", db,
             "-f", join(REPO, "schema.sql"),
             "-c", `set variable src='${log}';`,
-            "-f", join(REPO, "load_file.sql"),
-            "-f", join(REPO, "load_common.sql"),
+            "-f", join(REPO, "load.sql"),
         ]);
 
         const query = <T>(sql: string): T[] => {
@@ -173,7 +172,7 @@ function run(events: unknown[], opts: RunOpts = {}) {
         const ok = load.exitCode === 0;
         return {
             ok,
-            // load_common.sql ends with the drift report, so this is the operator-facing warning
+            // load.sql ends with the drift report, so this is the operator-facing warning
             report: load.stdout.toString(),
             stderr: load.stderr.toString(),
             shape: ok ? query<Shape>("select name, n, unconsumed, fingerprint::JSON as fingerprint from shape order by n desc, name") : [],
@@ -363,7 +362,7 @@ test("a baselined shape is reported only for unread keys, not for itself", () =>
 });
 
 test("RFC 7464 record separators load identically to plain lines", () => {
-    // read_ndjson_objects rejects a 0x1e outright, so load_file.sql splits lines with
+    // read_ndjson_objects rejects a 0x1e outright, so load.sql splits lines with
     // read_csv and strips the separator itself. The two formats must be the same
     // trace, not merely both loadable.
     const events = [...clean(), object(5, 7, 1), object(6, 7, 2)];

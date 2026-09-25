@@ -1,4 +1,4 @@
-// Proves load_file.sql can ingest an mlog as a stream of chunks and land the
+// Proves load.sql can ingest an mlog as a stream of chunks and land the
 // same database as ingesting the whole file at once.
 //   bun test streaming
 //
@@ -51,8 +51,7 @@ function loadFile(db: string, log: string) {
         db,
         "-f", join(REPO, "schema.sql"),
         "-c", `set variable src='${log}';`,
-        "-f", join(REPO, "load_file.sql"),
-        "-f", join(REPO, "load_common.sql"),
+        "-f", join(REPO, "load.sql"),
     ]);
 }
 
@@ -65,8 +64,7 @@ function loadStream(db: string, lines: string[], chunkSize: number, traceName: s
         const src = `${db}.chunk-${i}.jsonl`;
         writeFileSync(src, lines.slice(i, i + chunkSize).join("\n") + "\n");
         args.push("-c", `set variable src='${src}'; set variable trace_name='${traceName}';`,
-            "-f", join(REPO, "load_file.sql"),
-            "-f", join(REPO, "load_common.sql"));
+            "-f", join(REPO, "load.sql"));
     }
     duck(args);
 }

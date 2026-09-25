@@ -1,17 +1,10 @@
 # files
 
-How they compose:
-
     schema.sql          tables + object/event views; idempotent, run it first
+    load.sql            loads the mlog (or chunk) named by `src`
 
-    load_file.sql       defines the `raw` view over `src`; no ingest
-    load_common.sql     the ingest itself
-
-Pass both, in order, in one invocation -- `.read` resolves against the working
-directory, not the including script, so they cannot pull each other in:
-
-    duckdb t.db -f mlog-sql/schema.sql -c "<variables>" \
-      -f mlog-sql/load_file.sql -f mlog-sql/load_common.sql
+    duckdb t.db -f mlog-sql/schema.sql \
+      -c "set variable src='mlog.jsonl';" -f mlog-sql/load.sql
 
 The database assigns `trace_id`; the caller only names a file. To feed one trace
 as chunks, give each chunk its own `src` and set the same `trace_name` before
@@ -19,7 +12,7 @@ each.
 
     api.ts              the one file html4 imports: openCapture(engine, traces)
                         streams each trace in whole-record chunks through
-                        load_file.sql + load_common.sql, then returns typed
+                        load.sql, then returns typed
                         rows from the views (QUERIES). api-internal.ts holds
                         the chunker and row checks; api.test.ts holds the
                         DESCRIBE contract test.

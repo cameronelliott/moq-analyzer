@@ -7,5 +7,5 @@ rm -f "$here/t.db"
 duckdb "$here/t.db" \
     -f "$here/schema.sql" \
     -c "set variable src='$here/mlog.jsonl';" \
-    -f "$here/load_file.sql" -f "$here/load_common.sql" \
+    -f "$here/load.sql" \
     -c "select count(*) from object"

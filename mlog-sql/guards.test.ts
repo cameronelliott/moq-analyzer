@@ -4,7 +4,7 @@
 //
 // Two guards, one fixture each way:
 //   * trace.reference_time is NOT NULL (schema.sql) -- no wall clock, no chart.
-//   * load_common.sql errors when every subgroup header shares one stream_id --
+//   * load.sql errors when every subgroup header shares one stream_id --
 //     the stock-moq-rs signature; objects cannot reach a group without it.
 //
 // fixtures/vanilla-stock.mlog is the first 12 lines of a stock moq-rs relay's
@@ -72,8 +72,7 @@ function load(log: string) {
             "duckdb", db,
             "-f", join(REPO, "schema.sql"),
             "-c", `set variable src='${log}';`,
-            "-f", join(REPO, "load_file.sql"),
-            "-f", join(REPO, "load_common.sql"),
+            "-f", join(REPO, "load.sql"),
         ]);
         const counts: Record<string, number> = {};
         for (const t of TABLES) {

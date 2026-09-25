@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS control_message (
 --
 -- The key does not assume that, it enforces it: a capture reusing one id both
 -- ways fails at load rather than matching each object to two stream rows and
--- doubling the `object` view. load_common.sql names the cause first.
+-- doubling the `object` view. load.sql names the cause first.
 CREATE TABLE IF NOT EXISTS subgroup_stream (
     trace_id           USMALLINT,
     stream_id          UINTEGER,
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS event_other (
 -- changes type each produce a new row -- which is the drift signal. The census
 -- is tiny: 62k event lines collapse to four rows.
 --
--- `unconsumed` lists keys present in the log that no INSERT in load_file.sql reads.
+-- `unconsumed` lists keys present in the log that no INSERT in load.sql reads.
 -- Keys the loader knowingly drops as redundant (group_id/subgroup_id on
 -- objects, which subgroup_stream already carries) count as consumed -- they are
 -- accounted for, not unseen.
@@ -237,7 +237,7 @@ INSERT INTO shape_baseline (name, fingerprint) VALUES
 --   * a shape missing from shape_baseline, which catches a field that merely
 --     changed type -- the key set is unchanged there, so unconsumed is empty
 --
--- load_common.sql selects this at the end of a file load. It is also worth
+-- load.sql selects this at the end of a file load. It is also worth
 -- querying directly against an existing database, across every trace at once.
 CREATE OR REPLACE VIEW shape_drift AS
 SELECT

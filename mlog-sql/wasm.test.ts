@@ -8,7 +8,7 @@
 //
 // The browser has no filesystem, so a file reaches read_csv by being registered
 // under a name -- registerFileBuffer here, registerFileHandle or a URL in a page.
-// load_file.sql reads getvariable('src') and never touches the OS, so the same
+// load.sql reads getvariable('src') and never touches the OS, so the same
 // script serves both hosts; `src` is a path in one and a registered name in the
 // other.
 //
@@ -134,15 +134,14 @@ async function loadInWasm(files: { name: string; text: string; cid: string }[]) 
     await db.instantiate();
 
     // One connection for the whole load: session variables and the load's
-    // transaction are both connection-scoped. See load_common.sql's header.
+    // transaction are both connection-scoped. See load.sql's header.
     const conn = db.connect();
     try {
         conn.query(sqlFile("schema.sql"));
         for (const f of files) {
             db.registerFileBuffer(f.name, new TextEncoder().encode(f.text));
             conn.query(`SET VARIABLE src = '${f.name}'; SET VARIABLE cid = '${f.cid}';`);
-            conn.query(sqlFile("load_file.sql"));
-            conn.query(sqlFile("load_common.sql"));
+            conn.query(sqlFile("load.sql"));
         }
         // toJSON() yields the column values; the shape is fixed by SUMMARY
         const row = conn.query(SUMMARY).toArray()[0]!.toJSON() as Summary;
@@ -165,8 +164,7 @@ function loadInCli(files: { name: string; text: string; cid: string }[]) {
                 "duckdb", db,
                 "-f", join(REPO, "schema.sql"),
                 "-c", `SET VARIABLE src = '${path}'; SET VARIABLE cid = '${f.cid}';`,
-                "-f", join(REPO, "load_file.sql"),
-                "-f", join(REPO, "load_common.sql"),
+                "-f", join(REPO, "load.sql"),
             ]);
             if (r.exitCode !== 0) throw new Error(r.stderr.toString());
         }
@@ -266,8 +264,7 @@ test("several registered buffers accumulate into one trace", async () => {
             conn.query(`SET VARIABLE src = '${name}';`
                      + ` SET VARIABLE trace_name = 'sender.mlog';`
                      + ` SET VARIABLE cid = 'c1';`);
-            conn.query(sqlFile("load_file.sql"));
-            conn.query(sqlFile("load_common.sql"));
+            conn.query(sqlFile("load.sql"));
         }
 
         // one trace, filed under trace_name and not under any chunk's src
@@ -304,15 +301,13 @@ test("trace_name is spent, so an override cannot leak into the next load", async
 
         db.registerFileBuffer("a.mlog", new TextEncoder().encode(f.sender));
         conn.query("SET VARIABLE src='a.mlog'; SET VARIABLE trace_name='named.mlog'; SET VARIABLE cid='c1';");
-        conn.query(sqlFile("load_file.sql"));
-        conn.query(sqlFile("load_common.sql"));
+        conn.query(sqlFile("load.sql"));
 
         // second load sets no trace_name; it must fall back to src, not reuse the
         // previous override -- which would collide on filename and be refused
         db.registerFileBuffer("b.mlog", new TextEncoder().encode(f.receiver));
         conn.query("SET VARIABLE src='b.mlog'; SET VARIABLE cid='c1';");
-        conn.query(sqlFile("load_file.sql"));
-        conn.query(sqlFile("load_common.sql"));
+        conn.query(sqlFile("load.sql"));
 
         const rows = conn.query("SELECT filename FROM trace ORDER BY trace_id")
             .toArray().map((r) => r.toJSON()) as { filename: string }[];
@@ -341,13 +336,11 @@ test("the guards fire in wasm too, not just under the CLI", async () => {
         conn.query(sqlFile("schema.sql"));
         db.registerFileBuffer("a.mlog", new TextEncoder().encode(f.sender));
         conn.query("SET VARIABLE src = 'a.mlog';");
-        conn.query(sqlFile("load_file.sql"));
-        conn.query(sqlFile("load_common.sql"));
+        conn.query(sqlFile("load.sql"));
 
         // same file, same name: filename UNIQUE must refuse it here as well
         conn.query("SET VARIABLE src = 'a.mlog';");
-        conn.query(sqlFile("load_file.sql"));
-        expect(() => conn.query(sqlFile("load_common.sql"))).toThrow(/filename/);
+        expect(() => conn.query(sqlFile("load.sql"))).toThrow(/filename/);
     } finally {
         conn.close();
         db.reset();

@@ -124,8 +124,7 @@ function loadInto(db: string, logs: (string | { log: string; cid: string })[]) {
             "-f", join(REPO, "schema.sql"),
             "-c", `set variable src='${log}';`
                 + (cid === undefined ? "" : ` set variable cid='${cid}';`),
-            "-f", join(REPO, "load_file.sql"),
-            "-f", join(REPO, "load_common.sql"),
+            "-f", join(REPO, "load.sql"),
         ]);
         last = { ok: r.exitCode === 0, stderr: r.stderr.toString() };
         if (!last.ok) break;
