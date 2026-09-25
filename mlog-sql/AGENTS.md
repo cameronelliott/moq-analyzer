@@ -1,46 +1,11 @@
-# files
+# rules
 
-    schema.sql          tables + object/event views; idempotent, run it first
-    load.sql            loads the mlog (or chunk) named by `src`
-
-    duckdb t.db -f mlog-sql/schema.sql \
-      -c "set variable src='mlog.jsonl';" -f mlog-sql/load.sql
-
-The database assigns `trace_id`; the caller only names a file. To feed one trace
-as chunks, give each chunk its own `src` and set the same `trace_name` before
-each.
-
-    api.ts              the one file html4 imports: openCapture(engine, traces)
-                        streams each trace in whole-record chunks through
-                        load.sql, then returns typed
-                        rows from the views (QUERIES). api-internal.ts holds
-                        the chunker and row checks; api.test.ts holds the
-                        DESCRIBE contract test.
-
-    test-duplicated-mlog.sql    audits a loaded database for double-inserted
-                                rows; no rows means clean
-
-    fixtures/vanilla-stock.mlog stock moq-rs relay mlog (no reference_time,
-                                stream_id 0 everywhere); guards.test.ts
-                                proves the loader refuses it.
-
-Tests are `bun test`. streaming.test.ts reads mlog.jsonl, which is gitignored --
-supply one locally.
-
-# the .sql files must run in duckdb-wasm
-
-- Plain SQL only: no dot commands, nothing that assumes a terminal. wasm.test.ts
-  runs the real wasm engine under node and compares a load against the CLI row
-  for row.
-- wasm fetches `icu` and `json` from extensions.duckdb.org on first use; the CLI
-  has them built in. A CLI check says nothing about the browser -- verify
-  against wasm.
-- `schema.sql` opens with `LOAD icu; SET TimeZone='UTC';`. The explicit LOAD is
-  required: an operator overload never autoloads, so `TIMESTAMPTZ + INTERVAL`
-  otherwise fails to bind with an error that names neither ICU nor the fix.
-- Session variables and the load's `BEGIN`/`COMMIT` are connection-scoped. A
-  whole load must run on one connection; spreading it across connections gives
-  NULLs, not errors.
+- html4 imports `api.ts` only. The views are the source of truth: api.ts runs a
+  SELECT over one view per query and writes no joins.
+- The .sql files must run in duckdb-wasm: plain SQL, no dot commands. wasm
+  fetches `icu` and `json` at runtime while the CLI has them built in, so a CLI
+  check says nothing about the browser -- wasm.test.ts is the check.
+- Tests are `bun test`. streaming.test.ts needs a local mlog.jsonl (gitignored).
 
 # open, not decided
 
@@ -64,8 +29,8 @@ Unknown events keep `data` verbatim in event_other, so those round-trip already.
 
 # Cameron's decisions
 
-- json shape drift is caught in production, in the load*.sql files. Too early to
-  remove that.
+- json shape drift is caught in production, in load.sql. Too early to remove
+  that.
 - trace_id identifies a trace; cid is just an optional connection id on the
   trace row.
 - these are mlog files. The header shape came from qlog, so qlog_version /
