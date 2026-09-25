@@ -1,4 +1,5 @@
-// The one file html4 imports from mlog-sql. It hides the load steps -- buffer
+/// <reference path="./sql.d.ts" />
+// The package entry point (package.json "exports"). It hides the load steps -- buffer
 // names, session variables, one connection, the transaction, ICU -- and hands
 // back typed rows from the views. The views stay the source of truth: every
 // query here is a SELECT over one view, and no join is written in TypeScript.
@@ -14,7 +15,7 @@
 import schemaSql from "./schema.sql" with { type: "text" };
 import loadSql from "./load.sql" with { type: "text" };
 import {
-    CaptureError, col, recordChunks, sqlString, validateRows,
+    CaptureError, QUERIES, col, recordChunks, sqlString, validateRows,
     type Columns, type QuerySpec, type Row,
 } from "./api-internal";
 
@@ -52,57 +53,8 @@ export interface CaptureOptions {
 
 // --- what comes back --------------------------------------------------------
 
-/** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
- *  keep BIGINT out of the rows. api.test.ts DESCRIBEs each one against this. */
-export const QUERIES = {
-    // Per subscriber and leg. Means as well as medians: per-leg means sum to the
-    // end-to-end mean and medians do not (see the `leg` view).
-    legSummary: {
-        sql: `SELECT sub_cid,
-                     leg_no::INTEGER                          AS leg_no,
-                     leg,
-                     count(*)::INTEGER                        AS n,
-                     (avg(us) / 1000)::DOUBLE                 AS mean_ms,
-                     (median(us) / 1000)::DOUBLE              AS median_ms,
-                     (quantile_cont(us, 0.95) / 1000)::DOUBLE AS p95_ms
-              FROM leg
-              GROUP BY ALL
-              ORDER BY sub_cid, leg_no`,
-        columns: {
-            sub_cid: col("VARCHAR", false),
-            leg_no: col("INTEGER", false),
-            leg: col("VARCHAR", false),
-            n: col("INTEGER", false),
-            mean_ms: col("DOUBLE", false),
-            median_ms: col("DOUBLE", false),
-            p95_ms: col("DOUBLE", false),
-        },
-    },
-    // Per connection. `lost` and `outside_window` stay apart: their sum is not loss.
-    trust: {
-        sql: `SELECT cid,
-                     sender_is,
-                     sent::INTEGER           AS sent,
-                     received::INTEGER       AS received,
-                     joined::INTEGER         AS joined,
-                     lost::INTEGER           AS lost,
-                     outside_window::INTEGER AS outside_window,
-                     negative_hops::INTEGER  AS negative_hops
-              FROM trust
-              ORDER BY cid`,
-        columns: {
-            cid: col("VARCHAR", false),
-            sender_is: col("VARCHAR", true),   // NULL when nothing was sent on the connection
-            sent: col("INTEGER", false),
-            received: col("INTEGER", false),
-            joined: col("INTEGER", false),
-            lost: col("INTEGER", false),
-            outside_window: col("INTEGER", false),
-            negative_hops: col("INTEGER", false),
-        },
-    },
-} as const satisfies Record<string, QuerySpec<Columns>>;
-
+// The SQL and column specs live in api-internal.ts as QUERIES; these row types
+// are what the caller sees of them.
 export type LegSummaryRow = Row<typeof QUERIES.legSummary.columns>;
 export type TrustRow = Row<typeof QUERIES.trust.columns>;
 

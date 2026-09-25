@@ -19,10 +19,10 @@ import {
     createDuckDB, NODE_RUNTIME, ConsoleLogger, LogLevel,
 } from "@duckdb/duckdb-wasm/blocking";
 import {
-    openCapture, CaptureError, QUERIES,
+    openCapture, CaptureError,
     type Engine, type TraceSource,
 } from "./api";
-import { col, recordChunks, validateRows } from "./api-internal";
+import { QUERIES, col, recordChunks, validateRows } from "./api-internal";
 
 const REPO = import.meta.dir;
 const DIST = join(REPO, "node_modules", "@duckdb", "duckdb-wasm", "dist");
@@ -166,6 +166,12 @@ const DESCRIBE_SPEC = {
 };
 
 describe("contract", () => {
+    // package.json "exports" makes api.ts the whole package. Types vanish at
+    // runtime, so this pins only the values; a new one must be added here on purpose.
+    test("api.ts exports exactly these values", async () => {
+        expect(Object.keys(await import("./api")).sort()).toEqual(["CaptureError", "openCapture"]);
+    });
+
     for (const [name, spec] of Object.entries(QUERIES)) {
         test(`${name}: DESCRIBE matches the promised columns, in order`, async () => {
             const { engine, reset } = await nodeEngine();

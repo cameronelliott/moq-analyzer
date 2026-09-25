@@ -1,7 +1,10 @@
 # rules
 
-- html4 imports `api.ts` only. The views are the source of truth: api.ts runs a
-  SELECT over one view per query and writes no joins.
+- `api.ts` is the whole public interface (package.json `exports`). Everything
+  else, `QUERIES` included, lives in api-internal.ts. api.test.ts pins the
+  exported values.
+- The views are the source of truth: api.ts runs a SELECT over one view per
+  query and writes no joins.
 - The .sql files must run in duckdb-wasm: plain SQL, no dot commands. wasm
   fetches `icu` and `json` at runtime while the CLI has them built in, so a CLI
   check says nothing about the browser -- wasm.test.ts is the check.

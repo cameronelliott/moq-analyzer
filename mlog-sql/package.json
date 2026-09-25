@@ -2,6 +2,9 @@
   "name": "mlog-sql",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./api.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
