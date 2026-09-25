@@ -23,14 +23,14 @@ const REPO = import.meta.dir;
 // two `time` fields and the test can state the answer in milliseconds.
 const REFERENCE_TIME = 1788560083342.7483;
 
-const header = (vantage: "client" | "server") => ({
+const header = (vantage: "client" | "server", referenceTime = REFERENCE_TIME) => ({
     qlog_version: "0.3",
     qlog_format: "JSON-SEQ",
     title: "direction-test",
     description: "MoQ Transport events",
     trace: {
         vantage_point: { type: vantage },
-        common_fields: { reference_time: REFERENCE_TIME, time_format: "relative" },
+        common_fields: { reference_time: referenceTime, time_format: "relative" },
         event_schemas: ["urn:ietf:params:qlog:events:moqt"],
     },
 });
@@ -523,6 +523,93 @@ test("interarrival measures one track at one endpoint, and throughput buckets it
                 { track_name: "1.m4s", objects: 2, bytes: 2542, bits: 20_336 },
                 { track_name: "2.m4s", objects: 2, bytes: 2542, bits: 20_336 },
             ]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("jitter is RFC 3550's D per leg and track, and a clock offset cancels out", () => {
+    const dir = tmp("mlog-jitter-");
+    try {
+        // Two tracks, interleaved, over pub -> relay -> sub. Per object, in ms:
+        //
+        //   track obj  pub  relay-in  relay-out  sub  | leg1 dwell leg3
+        //   1.m4s  0    10     60        61      100  |  50    1    39
+        //   2.m4s  0    15     65        66      105  |  50    1    39
+        //   1.m4s  1    20     72        74      115  |  52    2    41
+        //   2.m4s  1    25     76        77      117  |  51    1    40
+        //   1.m4s  2    30     79        80      120  |  49    1    40
+        //
+        // D between consecutive arrivals on one track is the change in transit.
+        // A lag that forgot the track would pair 1.m4s with 2.m4s and answer
+        // 0, 2, 1, 2 for leg 1 instead of 2, -3 and 1.
+        //
+        // The subscriber's clock runs a whole second ahead. Leg 3 transit is then
+        // wrong by that second, and D must not notice: both transits carry it.
+        const hdrs = (alias: number) => [
+            subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
+            subscribe(3, alias + 1, "/bbb", "2.m4s"), subscribeOk(4, alias + 1, alias + 1),
+        ];
+        const side = (dir: Dir, s1: number, s2: number, alias: number,
+                      t1: number[], t2: number[]) => {
+            const objs: [number, number, number][] = [
+                ...t1.map((t, i): [number, number, number] => [t, s1, i]),
+                ...t2.map((t, i): [number, number, number] => [t, s2, i]),
+            ].sort((a, b) => a[0] - b[0]);
+            return [
+                ...hdrs(alias),
+                subgroupHeader(dir, 5, s1, alias, 7),
+                subgroupHeader(dir, 5, s2, alias + 1, 7),
+                ...objs.map(([t, s, id]) => object(dir, t, s, 7, id)),
+            ];
+        };
+        const pub = writeLog(dir, "pub.jsonl", header("client"),
+            side("created", 2, 6, 5, [10, 20, 30], [15, 25]));
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"),
+            side("parsed", 2, 6, 4, [60, 72, 79], [65, 76]));
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"),
+            side("created", 3, 7, 4, [61, 74, 80], [66, 77]));
+        const sub = writeLog(dir, "sub.jsonl", header("client", REFERENCE_TIME + 1000),
+            side("parsed", 3, 7, 4, [100, 115, 120], [105, 117]));
+
+        const db = join(dir, "jitter.db");
+        expect(loadInto(db, [
+            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+        ]).ok).toBe(true);
+
+        // the offset really is there: leg 3 transit is off by a full second
+        expect(query<{ us: number }>(db,
+            "select us::int as us from leg where leg_no = 3 and track_name = '1.m4s' and object_id = 0"))
+            .toEqual([{ us: 1_039_000 }]);
+
+        // first object per track has no predecessor, so NULL rather than zero
+        expect(query<{ leg_no: number; track_name: string; object_id: number;
+                       d_us: number | null; jitter_us: number | null }>(db,
+            `select leg_no, track_name, object_id, d_us::int as d_us, jitter_us::int as jitter_us
+             from jitter order by leg_no, track_name, object_id`))
+            .toEqual([
+                { leg_no: 1, track_name: "1.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 1, track_name: "1.m4s", object_id: 1, d_us: 2000,  jitter_us: 2000 },
+                { leg_no: 1, track_name: "1.m4s", object_id: 2, d_us: -3000, jitter_us: 3000 },
+                { leg_no: 1, track_name: "2.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 1, track_name: "2.m4s", object_id: 1, d_us: 1000,  jitter_us: 1000 },
+                { leg_no: 2, track_name: "1.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 2, track_name: "1.m4s", object_id: 1, d_us: 1000,  jitter_us: 1000 },
+                { leg_no: 2, track_name: "1.m4s", object_id: 2, d_us: -1000, jitter_us: 1000 },
+                { leg_no: 2, track_name: "2.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 2, track_name: "2.m4s", object_id: 1, d_us: 0,     jitter_us: 0 },
+                { leg_no: 3, track_name: "1.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 3, track_name: "1.m4s", object_id: 1, d_us: 2000,  jitter_us: 2000 },
+                { leg_no: 3, track_name: "1.m4s", object_id: 2, d_us: -1000, jitter_us: 1000 },
+                { leg_no: 3, track_name: "2.m4s", object_id: 0, d_us: null,   jitter_us: null },
+                { leg_no: 3, track_name: "2.m4s", object_id: 1, d_us: 1000,  jitter_us: 1000 },
+            ]);
+
+        // every row belongs to the one subscriber, including leg 1's shared hop
+        expect(query<{ sub_cid: string; n: number }>(db,
+            "select sub_cid, count(*)::int as n from jitter group by 1"))
+            .toEqual([{ sub_cid: "c2", n: 15 }]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }

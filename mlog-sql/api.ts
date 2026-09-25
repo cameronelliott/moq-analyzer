@@ -57,10 +57,14 @@ export interface CaptureOptions {
 // are what the caller sees of them.
 export type LegSummaryRow = Row<typeof QUERIES.legSummary.columns>;
 export type TrustRow = Row<typeof QUERIES.trust.columns>;
+export type JitterSummaryRow = Row<typeof QUERIES.jitterSummary.columns>;
+export type JitterSeriesRow = Row<typeof QUERIES.jitterSeries.columns>;
 
 export interface Capture {
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
+    jitterSummary(): Promise<JitterSummaryRow[]>;
+    jitterSeries(): Promise<JitterSeriesRow[]>;
 }
 
 // --- loading ----------------------------------------------------------------
@@ -104,6 +108,8 @@ export async function openCapture(
     return {
         legSummary: () => run("legSummary", QUERIES.legSummary),
         trust: () => run("trust", QUERIES.trust),
+        jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),
+        jitterSeries: () => run("jitterSeries", QUERIES.jitterSeries),
     };
 }
 

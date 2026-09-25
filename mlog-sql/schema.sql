@@ -514,9 +514,39 @@ JOIN hop h ON h.cid = d.out_cid
                d.group_id, d.subgroup_id, d.object_id)
 WHERE NOT d.held;
 
+-- RFC 3550 6.4.1 interarrival jitter, per leg: D is how much an object's transit
+-- differs from the previous object's on the same track and leg, taken in order
+-- of arrival. One row per object in `leg`; the first per track has no
+-- predecessor and comes back NULL rather than zero.
+--
+-- D is a difference of two transits, so a constant offset between the two
+-- clocks cancels. That makes this the one per-leg number that does not rest on
+-- clock sync -- `leg` itself does, and `trust` cannot vouch for it.
+--
+-- d_us is signed, as the RFC defines D: positive means this object took longer
+-- than the one before. jitter_us is |D|, the sample the RFC's J averages. The
+-- RFC's running 1/16 filter is left to the caller; a mean of jitter_us over a
+-- window is the same estimate without the recursion.
+--
+-- Built on `leg`, so held objects are already out, and each subscriber gets
+-- its own leg 1 series even though that hop is shared.
+CREATE OR REPLACE VIEW jitter AS
+SELECT sub_cid, leg_no, leg,
+       track_namespace, track_name, group_id, subgroup_id, object_id,
+       t_end,
+       d_us,
+       abs(d_us) AS jitter_us
+FROM (
+    SELECT *,
+           us - lag(us) OVER (PARTITION BY sub_cid, leg_no, track_namespace, track_name
+                              ORDER BY t_end, group_id, subgroup_id, object_id) AS d_us
+    FROM leg
+);
+
 -- Chart 2. The gap between an object arriving and the one before it on the same
--- track, at whichever endpoint decoded it. rtcstats calls this Latency,
--- chrome://webrtc-internals calls it Jitter, RFC 3550 6.4.1 defines it.
+-- track, at whichever endpoint decoded it. rtcstats calls this Latency. It is
+-- not RFC 3550 jitter: the gap includes the publisher's own pacing, so a steady
+-- 30 fps track shows 33 ms here on a perfect network. `jitter` is the RFC one.
 --
 -- One trace and one track at a time: the window partitions by trace_id, so
 -- nothing is ever measured across two endpoints or two tracks. The first object

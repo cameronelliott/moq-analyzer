@@ -149,7 +149,20 @@ const EXPECTED_TRUST = [
     { cid: "sub1", sender_is: "server", sent: 3, received: 3, joined: 3, lost: 0, outside_window: 0, negative_hops: 0 },
 ];
 
-const DUPLICATE_AUDIT = readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
+// Every leg's transit is constant, so D is zero throughout: this pins the
+// plumbing, and direction.test.ts pins the arithmetic. Three objects give two
+// samples each, all in the capture's first second.
+const EXPECTED_JITTER_SUMMARY = [1, 2, 3].map((leg_no) => ({
+    sub_cid: "sub1", leg_no, leg: EXPECTED_LEGS[leg_no - 1]!.leg,
+    n: 2, mean_ms: 0, p95_ms: 0, p99_ms: 0, max_ms: 0,
+}));
+
+const EXPECTED_JITTER_SERIES = [1, 2, 3].map((leg_no) => ({
+    sub_cid: "sub1", leg_no, leg: EXPECTED_LEGS[leg_no - 1]!.leg,
+    t_s: 0, n: 2, mean_ms: 0, max_ms: 0,
+}));
+
+const DUPLICATE_AUDIT =readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
 
 // --- the contract -----------------------------------------------------------
 
@@ -198,6 +211,8 @@ describe("openCapture", () => {
             const cap = await openCapture(engine, fixtureSources());
             expect(await cap.legSummary()).toEqual(EXPECTED_LEGS);
             expect(await cap.trust()).toEqual(EXPECTED_TRUST);
+            expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY);
+            expect(await cap.jitterSeries()).toEqual(EXPECTED_JITTER_SERIES);
         } finally {
             reset();
         }
@@ -359,6 +374,28 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
                 expect(r.sender_is).toBe(r.cid === PUBLISHER ? "client" : "server");
                 expect(r.negative_hops).toBe(0);
             }
+
+            // Jitter is RFC 3550 |D| in ms. Means run 0.07-0.13 ms here; a
+            // unit slip lands 1000x off either way. Leg 1 is again one shared
+            // hop, so its means must agree across subscribers.
+            const jit = await cap.jitterSummary();
+            expect(jit).toHaveLength(12);
+            for (const r of jit) {
+                expect(r.mean_ms).toBeGreaterThan(0.01);
+                expect(r.mean_ms).toBeLessThan(1);
+                expect(r.p95_ms).toBeLessThanOrEqual(r.p99_ms);
+                expect(r.p99_ms).toBeLessThanOrEqual(r.max_ms);
+            }
+            const jit1 = jit.filter((r) => r.leg_no === 1).map((r) => r.mean_ms);
+            expect(Math.max(...jit1) - Math.min(...jit1)).toBeLessThan(0.01);
+
+            // One row per subscriber, leg and second: the longest subscriber
+            // ran 959 s, so the axis starts at 0 and stays inside that.
+            const series = await cap.jitterSeries();
+            expect(Math.min(...series.map((r) => r.t_s))).toBe(0);
+            expect(Math.max(...series.map((r) => r.t_s))).toBeLessThan(1000);
+            expect(series.reduce((n, r) => n + r.n, 0))
+                .toBe(jit.reduce((n, r) => n + r.n, 0));
 
             const audit = await (await engine.connect()).query(DUPLICATE_AUDIT);
             expect(audit).toEqual([]);

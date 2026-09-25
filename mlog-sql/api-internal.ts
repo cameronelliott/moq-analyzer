@@ -189,6 +189,63 @@ export const QUERIES = {
             p95_ms: col("DOUBLE", false),
         },
     },
+    // RFC 3550 jitter per subscriber and leg, over the whole session. p99 is here
+    // and not in the series: 40k+ samples make it mean something, ~70 a second
+    // make it the max.
+    jitterSummary: {
+        sql: `SELECT sub_cid,
+                     leg_no::INTEGER                                 AS leg_no,
+                     leg,
+                     count(*)::INTEGER                               AS n,
+                     (avg(jitter_us) / 1000)::DOUBLE                 AS mean_ms,
+                     (quantile_cont(jitter_us, 0.95) / 1000)::DOUBLE AS p95_ms,
+                     (quantile_cont(jitter_us, 0.99) / 1000)::DOUBLE AS p99_ms,
+                     (max(jitter_us) / 1000)::DOUBLE                 AS max_ms
+              FROM jitter
+              WHERE jitter_us IS NOT NULL
+              GROUP BY ALL
+              ORDER BY sub_cid, leg_no`,
+        columns: {
+            sub_cid: col("VARCHAR", false),
+            leg_no: col("INTEGER", false),
+            leg: col("VARCHAR", false),
+            n: col("INTEGER", false),
+            mean_ms: col("DOUBLE", false),
+            p95_ms: col("DOUBLE", false),
+            p99_ms: col("DOUBLE", false),
+            max_ms: col("DOUBLE", false),
+        },
+    },
+    // The same per second, for a time chart. t_s counts from the capture's first
+    // sample, not each subscriber's, so panels share one axis and late joiners
+    // start late. A second with no sample has no row.
+    jitterSeries: {
+        sql: `SELECT sub_cid,
+                     leg_no::INTEGER                                 AS leg_no,
+                     leg,
+                     (epoch(sec) - epoch(min(sec) OVER ()))::INTEGER AS t_s,
+                     n,
+                     mean_ms,
+                     max_ms
+              FROM (SELECT sub_cid, leg_no, leg,
+                           time_bucket(INTERVAL '1 second', t_end) AS sec,
+                           count(*)::INTEGER               AS n,
+                           (avg(jitter_us) / 1000)::DOUBLE AS mean_ms,
+                           (max(jitter_us) / 1000)::DOUBLE AS max_ms
+                    FROM jitter
+                    WHERE jitter_us IS NOT NULL
+                    GROUP BY ALL)
+              ORDER BY sub_cid, leg_no, t_s`,
+        columns: {
+            sub_cid: col("VARCHAR", false),
+            leg_no: col("INTEGER", false),
+            leg: col("VARCHAR", false),
+            t_s: col("INTEGER", false),
+            n: col("INTEGER", false),
+            mean_ms: col("DOUBLE", false),
+            max_ms: col("DOUBLE", false),
+        },
+    },
     // Per connection. `lost` and `outside_window` stay apart: their sum is not loss.
     trust: {
         sql: `SELECT cid,
