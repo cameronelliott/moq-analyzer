@@ -290,6 +290,12 @@ JOIN      subgroup_stream s USING (trace_id, stream_id)
 LEFT JOIN track           t USING (trace_id, track_alias)
 LEFT JOIN trace          tr USING (trace_id);
 
+-- The second the capture's first object falls in. Every series counts t_s from
+-- here, so charts of different measures share one time axis.
+CREATE OR REPLACE VIEW capture_start AS
+SELECT time_bucket(INTERVAL '1 second', min(wall_time)) AS sec
+FROM object;
+
 -- One object crossing one connection: built at one end, decoded at the other.
 -- That is a network leg -- publisher to relay, or relay to subscriber. Relay
 -- dwell is not a hop: it spans two connections at one host, so it needs to know
@@ -580,12 +586,13 @@ WHERE jitter_us IS NOT NULL
 GROUP BY ALL;
 
 -- Jitter series: the same per second of arrival, for a time chart. t_s counts
--- from the capture's first sample, not each subscriber's, so every subscriber
--- shares one axis and a late joiner starts late. A second with no sample has
--- no row. One second is safe to bucket in any session zone (see `throughput`).
+-- from `capture_start`, not each subscriber's first sample, so every
+-- subscriber and every measure shares one axis and a late joiner starts late.
+-- A second with no sample has no row. One second is safe to bucket in any
+-- session zone (see `object_bitrate`).
 CREATE OR REPLACE VIEW jitter_series AS
 SELECT sub_cid, leg_no, leg, sec,
-       epoch(sec) - epoch(min(sec) OVER ()) AS t_s,
+       epoch(sec) - epoch((SELECT sec FROM capture_start)) AS t_s,
        n, mean_ms, max_ms
 FROM (
     SELECT sub_cid, leg_no, leg,
@@ -632,22 +639,31 @@ FROM object o
 JOIN trace t USING (trace_id)
 WHERE o.direction = 'parsed';
 
--- Chart 3. Bytes per track per second, which is the one place a line is honest,
--- because a rate is bucketed whether you like it or not.
+-- Object bitrate: payload bytes per trace, direction, track and second.
 --
 -- payload_length only: this is media bytes, not bytes on the wire, so it counts
--- no QUIC or MoQ framing and no retransmission. A second with no object has no
--- row rather than a zero -- absent, not zero -- so a chart that wants a
--- continuous axis fills the gaps itself and can see that it did.
+-- no QUIC or MoQ framing and no retransmission. An mlog logs no other size.
+-- A second with no object has no row rather than a zero -- absent, not zero --
+-- so a chart that wants a continuous axis fills the gaps itself and can see
+-- that it did.
+--
+-- Both directions. `created` is the rate an end sent -- at the publisher, the
+-- closest an mlog gets to the encoder's rate. `parsed` is the rate an end
+-- received, bursts after a stall included. A relay's `created` on a
+-- subscriber's connection against that subscriber's `parsed` shows delay as a
+-- gap that closes and loss as one that stays -- clipped to the window both
+-- logs cover, see `trust`.
 --
 -- One second, fixed. time_bucket on a TIMESTAMPTZ follows the session zone, but
 -- whole-minute offsets cannot move a second boundary, so this one is safe where
 -- an hourly bucket would not be.
-CREATE OR REPLACE VIEW throughput AS
+DROP VIEW IF EXISTS throughput;   -- this view's old name
+CREATE OR REPLACE VIEW object_bitrate AS
 SELECT
     t.cid,
     o.trace_id,
     t.vantage_point,
+    o.direction,
     o.track_namespace,
     o.track_name,
     time_bucket(INTERVAL '1 second', o.wall_time) AS sec,
@@ -656,8 +672,66 @@ SELECT
     sum(o.payload_length) * 8       AS bits
 FROM object o
 JOIN trace t USING (trace_id)
-WHERE o.direction = 'parsed'
 GROUP BY ALL;
+
+-- Object bitrate series: one row per end, direction, track and second, plus one
+-- `scope = 'all'` row per end, direction and second that sums every track.
+-- Totals are their own rows, not a column beside the track rows, so summing a
+-- column never counts a byte twice -- filter on scope first. track_name is NULL
+-- on `all` rows; it can also be NULL on a `track` row whose alias never
+-- resolved, which is why scope exists rather than NULL meaning "all".
+CREATE OR REPLACE VIEW object_bitrate_series AS
+SELECT cid, vantage_point, direction,
+       CASE WHEN grouping(track_name) = 1 THEN 'all' ELSE 'track' END AS scope,
+       track_namespace, track_name, sec,
+       epoch(sec) - epoch((SELECT sec FROM capture_start)) AS t_s,
+       sum(objects)      AS objects,
+       sum(bytes)        AS bytes,
+       sum(bits) / 1000  AS kbit_s
+FROM object_bitrate
+GROUP BY GROUPING SETS (
+    (cid, vantage_point, direction, track_namespace, track_name, sec),
+    (cid, vantage_point, direction, sec)
+);
+
+-- Object bitrate summary: one row per series above. bytes is the whole series.
+--
+-- The rates leave out the first and last second of each end's log -- per cid,
+-- vantage point and direction, not per series. A log starts and stops
+-- mid-second, so those two are partial and would drag the low end down. A
+-- track's own first second is not: on real-6pop a late joiner's first media
+-- second is the relay's catch-up burst, about 800 kbit/s against a 334 kbit/s
+-- stream, and trimming per series hid it from the track rows while the `all`
+-- row, started a second earlier by the init segment, kept it.
+--
+-- span_s is that interior, gaps included, and the mean is bits over span_s, so
+-- a gap counts as zero and the track means add up to the `all` mean -- a track
+-- present for part of the log is averaged over all of it, and one with nothing
+-- inside the interior, like a lone init segment, has a mean of 0. The
+-- percentiles are over seconds that have data; seconds says how many, and they
+-- are NULL when it is 0. An end of two seconds or fewer has no interior and
+-- NULL rates.
+CREATE OR REPLACE VIEW object_bitrate_summary AS
+WITH s AS (
+    SELECT *,
+           min(sec) OVER w AS first_sec,
+           max(sec) OVER w AS last_sec
+    FROM object_bitrate_series
+    WINDOW w AS (PARTITION BY cid, vantage_point, direction)
+)
+SELECT cid, vantage_point, direction, scope, track_namespace, track_name,
+       sum(bytes) AS bytes,
+       count(*) FILTER (WHERE sec > first_sec AND sec < last_sec) AS seconds,
+       greatest(epoch(any_value(last_sec)) - epoch(any_value(first_sec)) - 1, 0) AS span_s,
+       coalesce(sum(kbit_s) FILTER (WHERE sec > first_sec AND sec < last_sec), 0)
+           / nullif(greatest(epoch(any_value(last_sec)) - epoch(any_value(first_sec)) - 1, 0), 0)
+                                                                                  AS mean_kbit_s,
+       quantile_cont(kbit_s, 0.05) FILTER (WHERE sec > first_sec AND sec < last_sec) AS p5_kbit_s,
+       quantile_cont(kbit_s, 0.5)  FILTER (WHERE sec > first_sec AND sec < last_sec) AS median_kbit_s,
+       quantile_cont(kbit_s, 0.95) FILTER (WHERE sec > first_sec AND sec < last_sec) AS p95_kbit_s,
+       max(kbit_s)                 FILTER (WHERE sec > first_sec AND sec < last_sec) AS max_kbit_s
+FROM s
+GROUP BY cid, vantage_point, direction, scope, track_namespace, track_name;
 
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add

@@ -230,6 +230,69 @@ export const QUERIES = {
             max_ms: col("DOUBLE", false),
         },
     },
+    // Bytes are DOUBLE: an INTEGER overflows at 2 GB, about two hours of 2 Mbit/s.
+    objectBitrateSeries: {
+        sql: `SELECT cid,
+                     vantage_point,
+                     direction::VARCHAR  AS direction,
+                     scope,
+                     track_namespace,
+                     track_name,
+                     t_s::INTEGER        AS t_s,
+                     objects::INTEGER    AS objects,
+                     bytes::DOUBLE       AS bytes,
+                     kbit_s::DOUBLE      AS kbit_s
+              FROM object_bitrate_series
+              ORDER BY cid, vantage_point, direction, scope, track_namespace, track_name, t_s`,
+        columns: {
+            cid: col("VARCHAR", false),
+            vantage_point: col("VARCHAR", false),
+            direction: col("VARCHAR", false),
+            scope: col("VARCHAR", false),
+            track_namespace: col("VARCHAR", true),   // NULL on `all` rows and unresolved tracks
+            track_name: col("VARCHAR", true),
+            t_s: col("INTEGER", false),
+            objects: col("INTEGER", false),
+            bytes: col("DOUBLE", false),
+            kbit_s: col("DOUBLE", false),
+        },
+    },
+    objectBitrateSummary: {
+        sql: `SELECT cid,
+                     vantage_point,
+                     direction::VARCHAR     AS direction,
+                     scope,
+                     track_namespace,
+                     track_name,
+                     bytes::DOUBLE          AS bytes,
+                     seconds::INTEGER       AS seconds,
+                     span_s::INTEGER        AS span_s,
+                     mean_kbit_s::DOUBLE    AS mean_kbit_s,
+                     p5_kbit_s::DOUBLE      AS p5_kbit_s,
+                     median_kbit_s::DOUBLE  AS median_kbit_s,
+                     p95_kbit_s::DOUBLE     AS p95_kbit_s,
+                     max_kbit_s::DOUBLE     AS max_kbit_s
+              FROM object_bitrate_summary
+              ORDER BY cid, vantage_point, direction, scope, track_namespace, track_name`,
+        columns: {
+            cid: col("VARCHAR", false),
+            vantage_point: col("VARCHAR", false),
+            direction: col("VARCHAR", false),
+            scope: col("VARCHAR", false),
+            track_namespace: col("VARCHAR", true),
+            track_name: col("VARCHAR", true),
+            bytes: col("DOUBLE", false),
+            seconds: col("INTEGER", false),
+            span_s: col("INTEGER", false),
+            // mean: NULL when the end's log is two seconds or shorter. The
+            // rest: also NULL when no second of the interior has data.
+            mean_kbit_s: col("DOUBLE", true),
+            p5_kbit_s: col("DOUBLE", true),
+            median_kbit_s: col("DOUBLE", true),
+            p95_kbit_s: col("DOUBLE", true),
+            max_kbit_s: col("DOUBLE", true),
+        },
+    },
     // Per connection. `lost` and `outside_window` stay apart: their sum is not loss.
     trust: {
         sql: `SELECT cid,

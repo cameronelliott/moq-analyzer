@@ -162,7 +162,29 @@ const EXPECTED_JITTER_SERIES = [1, 2, 3].map((leg_no) => ({
     t_s: 0, n: 2, mean_ms: 0, max_ms: 0,
 }));
 
-const DUPLICATE_AUDIT =readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
+// Each of the four traces has three 1271-byte objects inside one second: one
+// `track` row and one `all` row per end, and no interior second to rate.
+const BITRATE_ENDS = [
+    { cid: "pub",  vantage_point: "client", direction: "created" },
+    { cid: "pub",  vantage_point: "server", direction: "parsed" },
+    { cid: "sub1", vantage_point: "client", direction: "parsed" },
+    { cid: "sub1", vantage_point: "server", direction: "created" },
+];
+const SCOPES = [
+    { scope: "all",   track_namespace: null,   track_name: null },
+    { scope: "track", track_namespace: "/bbb", track_name: "1.m4s" },
+];
+
+const EXPECTED_BITRATE_SERIES = BITRATE_ENDS.flatMap((e) => SCOPES.map((s) => ({
+    ...e, ...s, t_s: 0, objects: 3, bytes: 3 * 1271, kbit_s: 3 * 1271 * 8 / 1000,
+})));
+
+const EXPECTED_BITRATE_SUMMARY = BITRATE_ENDS.flatMap((e) => SCOPES.map((s) => ({
+    ...e, ...s, bytes: 3 * 1271, seconds: 0, span_s: 0,
+    mean_kbit_s: null, p5_kbit_s: null, median_kbit_s: null, p95_kbit_s: null, max_kbit_s: null,
+})));
+
+const DUPLICATE_AUDIT = readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
 
 // --- the contract -----------------------------------------------------------
 
@@ -213,6 +235,8 @@ describe("openCapture", () => {
             expect(await cap.trust()).toEqual(EXPECTED_TRUST);
             expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY);
             expect(await cap.jitterSeries()).toEqual(EXPECTED_JITTER_SERIES);
+            expect(await cap.objectBitrateSeries()).toEqual(EXPECTED_BITRATE_SERIES);
+            expect(await cap.objectBitrateSummary()).toEqual(EXPECTED_BITRATE_SUMMARY);
         } finally {
             reset();
         }
@@ -396,6 +420,42 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
             expect(Math.max(...series.map((r) => r.t_s))).toBeLessThan(1000);
             expect(series.reduce((n, r) => n + r.n, 0))
                 .toBe(jit.reduce((n, r) => n + r.n, 0));
+
+            // Object bitrate. Every end carries the same ~334 kbit/s stream, so
+            // a unit slip is far outside 250-450. Track means add up to the
+            // `all` mean, and `all` rows hold exactly the track rows' bytes.
+            const rates = await cap.objectBitrateSummary();
+            const ends = new Map<string, { all: number | null; tracks: number }>();
+            for (const r of rates) {
+                const key = `${r.cid} ${r.vantage_point} ${r.direction}`;
+                const e = ends.get(key) ?? { all: null, tracks: 0 };
+                // every end here runs minutes, so no mean may be NULL -- not
+                // even the init segment's, which is 0 over the interior
+                expect(r.mean_kbit_s).not.toBeNull();
+                if (r.scope === "all") e.all = r.mean_kbit_s;
+                else e.tracks += r.mean_kbit_s ?? 0;
+                ends.set(key, e);
+            }
+            expect(ends.size).toBe(10);
+            for (const e of ends.values()) {
+                expect(e.all).toBeGreaterThan(250);
+                expect(e.all).toBeLessThan(450);
+                expect(e.tracks).toBeCloseTo(e.all ?? 0, 6);
+            }
+            const bitrate = await cap.objectBitrateSeries();
+            const bytesOf = (scope: string) =>
+                bitrate.filter((r) => r.scope === scope).reduce((n, r) => n + r.bytes, 0);
+            expect(bytesOf("all")).toBe(bytesOf("track"));
+
+            // The relay sends each subscriber at least what that subscriber
+            // received: the rest went out after the subscriber's log stopped.
+            for (const sub of subs) {
+                const sent = rates.find((r) => r.cid === sub && r.scope === "all" && r.direction === "created");
+                const got = rates.find((r) => r.cid === sub && r.scope === "all" && r.direction === "parsed");
+                expect(sent?.vantage_point).toBe("server");
+                expect(got?.vantage_point).toBe("client");
+                expect(sent!.bytes).toBeGreaterThanOrEqual(got!.bytes);
+            }
 
             const audit = await (await engine.connect()).query(DUPLICATE_AUDIT);
             expect(audit).toEqual([]);

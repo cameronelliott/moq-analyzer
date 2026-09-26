@@ -59,12 +59,16 @@ export type LegSummaryRow = Row<typeof QUERIES.legSummary.columns>;
 export type TrustRow = Row<typeof QUERIES.trust.columns>;
 export type JitterSummaryRow = Row<typeof QUERIES.jitterSummary.columns>;
 export type JitterSeriesRow = Row<typeof QUERIES.jitterSeries.columns>;
+export type ObjectBitrateSummaryRow = Row<typeof QUERIES.objectBitrateSummary.columns>;
+export type ObjectBitrateSeriesRow = Row<typeof QUERIES.objectBitrateSeries.columns>;
 
 export interface Capture {
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
     jitterSummary(): Promise<JitterSummaryRow[]>;
     jitterSeries(): Promise<JitterSeriesRow[]>;
+    objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
+    objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
 }
 
 // --- loading ----------------------------------------------------------------
@@ -110,6 +114,8 @@ export async function openCapture(
         trust: () => run("trust", QUERIES.trust),
         jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),
         jitterSeries: () => run("jitterSeries", QUERIES.jitterSeries),
+        objectBitrateSummary: () => run("objectBitrateSummary", QUERIES.objectBitrateSummary),
+        objectBitrateSeries: () => run("objectBitrateSeries", QUERIES.objectBitrateSeries),
     };
 }
 

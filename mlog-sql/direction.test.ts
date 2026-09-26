@@ -476,7 +476,7 @@ test("an object the relay held before subscribe_ok is flagged, and left out of l
     }
 });
 
-test("interarrival measures one track at one endpoint, and throughput buckets it", () => {
+test("interarrival measures one track at one endpoint, and object_bitrate buckets it", () => {
     const dir = tmp("mlog-charts23-");
     try {
         // Two tracks, interleaved on purpose. 1.m4s arrives at 60 and 100,
@@ -515,14 +515,18 @@ test("interarrival measures one track at one endpoint, and throughput buckets it
                 { track_name: "2.m4s", object_id: 1, us: 10_000 },
             ]);
 
-        // throughput buckets per track, not per endpoint: two objects of 1271
-        // bytes each, both tracks inside the same second
-        expect(query<{ track_name: string; objects: number; bytes: number; bits: number }>(db,
-            `select track_name, objects::int as objects, bytes::int as bytes,
-                    bits::int as bits from throughput order by track_name`))
+        // object_bitrate buckets per track and direction: two objects of 1271
+        // bytes each, both tracks inside the same second, sent and received
+        expect(query<{ direction: string; track_name: string; objects: number;
+                       bytes: number; bits: number }>(db,
+            `select direction::varchar as direction, track_name, objects::int as objects,
+                    bytes::int as bytes, bits::int as bits
+             from object_bitrate order by direction, track_name`))
             .toEqual([
-                { track_name: "1.m4s", objects: 2, bytes: 2542, bits: 20_336 },
-                { track_name: "2.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+                { direction: "created", track_name: "1.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+                { direction: "created", track_name: "2.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+                { direction: "parsed",  track_name: "1.m4s", objects: 2, bytes: 2542, bits: 20_336 },
+                { direction: "parsed",  track_name: "2.m4s", objects: 2, bytes: 2542, bits: 20_336 },
             ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -692,6 +696,115 @@ test("the frame views summarize leg and jitter per subscriber and leg", () => {
                 { leg_no: 1, t_s: 0, n: 3, mean_ms: 2,     max_ms: 3 },
                 { leg_no: 2, t_s: 0, n: 3, mean_ms: 0.667, max_ms: 1 },
                 { leg_no: 3, t_s: 1, n: 3, mean_ms: 1.333, max_ms: 2 },
+            ]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+/**
+ * One connection, two tracks, five seconds. The sender builds each object at
+ * the ms below and the receiver decodes it 50 ms later, in the same second.
+ * The reference time sits .343 s into its second, so ms 1000k+10 to 1000k+160
+ * all land in second k.
+ *
+ *   second   1.m4s              2.m4s
+ *     0      1000 B, 1000 B     100 B
+ *     1      3000 B             100 B
+ *     2      --                 100 B
+ *     3      500 B, 500 B       100 B
+ *     4      1000 B             100 B
+ *     5      --                 100 B
+ *
+ * Second 2 has no 1.m4s object, so that track has a gap there. 1.m4s stops a
+ * second before the log does, so its last second, 4, is a whole second.
+ */
+function bitratePair(dir: string) {
+    const a: [number, number][] = [[10, 1000], [110, 1000], [1010, 3000], [3010, 500], [3110, 500], [4010, 1000]];
+    const b: [number, number][] = [[60, 100], [1060, 100], [2060, 100], [3060, 100], [4060, 100], [5060, 100]];
+    const side = (d: Dir, alias: number, s1: number, s2: number, shift: number) => {
+        const objs = [
+            ...a.map(([t, len], i) => ({ t: t + shift, s: s1, id: i, len })),
+            ...b.map(([t, len], i) => ({ t: t + shift, s: s2, id: i, len })),
+        ].sort((x, y) => x.t - y.t);
+        return [
+            subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
+            subscribe(3, alias + 1, "/bbb", "2.m4s"), subscribeOk(4, alias + 1, alias + 1),
+            subgroupHeader(d, 5 + shift, s1, alias, 7),
+            subgroupHeader(d, 5 + shift, s2, alias + 1, 7),
+            ...objs.map((o) => object(d, o.t, o.s, 7, o.id, o.len)),
+        ];
+    };
+    const sender = writeLog(dir, "s.jsonl", header("client"), side("created", 5, 2, 6, 0));
+    const receiver = writeLog(dir, "r.jsonl", header("server"), side("parsed", 4, 2, 6, 50));
+    const db = join(dir, "bitrate.db");
+    const r = loadInto(db, [{ log: sender, cid: "c1" }, { log: receiver, cid: "c1" }]);
+    return { db, ok: r.ok };
+}
+
+test("object_bitrate frames: per track and all tracks, series and summary", () => {
+    const dir = tmp("mlog-bitrate-");
+    try {
+        const { db, ok } = bitratePair(dir);
+        expect(ok).toBe(true);
+
+        // The sent side. `all` rows sum both tracks in each second; they are
+        // their own rows, never a column beside the track rows. t_s counts
+        // from the capture's first object.
+        type S = { scope: string; track_name: string | null; t_s: number;
+                   objects: number; bytes: number; kbit_s: number };
+        const series = query<S>(db,
+            `select scope, track_name, t_s::int as t_s, objects::int as objects,
+                    bytes::int as bytes, round(kbit_s, 3) as kbit_s
+             from object_bitrate_series where direction = 'created'
+             order by scope desc, track_name, t_s`);
+        const row = (scope: string, track_name: string | null, t_s: number,
+                     objects: number, bytes: number): S =>
+            ({ scope, track_name, t_s, objects, bytes, kbit_s: bytes * 8 / 1000 });
+        expect(series).toEqual([
+            row("track", "1.m4s", 0, 2, 2000), row("track", "1.m4s", 1, 1, 3000),
+            row("track", "1.m4s", 3, 2, 1000), row("track", "1.m4s", 4, 1, 1000),
+            row("track", "2.m4s", 0, 1, 100), row("track", "2.m4s", 1, 1, 100),
+            row("track", "2.m4s", 2, 1, 100), row("track", "2.m4s", 3, 1, 100),
+            row("track", "2.m4s", 4, 1, 100), row("track", "2.m4s", 5, 1, 100),
+            row("all", null, 0, 3, 2100), row("all", null, 1, 2, 3100),
+            row("all", null, 2, 1, 100), row("all", null, 3, 3, 1100),
+            row("all", null, 4, 2, 1100), row("all", null, 5, 1, 100),
+        ]);
+
+        // the received side carries the same bytes, from the other end
+        expect(query<{ direction: string; vantage_point: string; bytes: number }>(db,
+            `select direction::varchar as direction, vantage_point, sum(bytes)::int as bytes
+             from object_bitrate_series where scope = 'track' group by all order by 1`))
+            .toEqual([
+                { direction: "created", vantage_point: "client", bytes: 7600 },
+                { direction: "parsed",  vantage_point: "server", bytes: 7600 },
+            ]);
+
+        // The summary drops the first and last second of each end's log, which
+        // are partial -- the same seconds for every row of that end, so 1.m4s
+        // keeps its whole last second, 4. span_s is the interior, gaps included;
+        // the mean is bits over span_s, so a gap counts as zero and the track
+        // means add up to the `all` mean. Percentiles are over seconds with data.
+        //   1.m4s interior: 24, 8, 8 kbit/s over 4 s, one gap -> mean 10
+        //   2.m4s interior: 0.8 four times
+        //   all   interior: 24.8, 0.8, 8.8, 8.8 -> mean 10.8 = 10 + 0.8
+        expect(query<{ scope: string; track_name: string | null; bytes: number;
+                       seconds: number; span_s: number; mean: number; p5: number;
+                       median: number; p95: number; max: number }>(db,
+            `select scope, track_name, bytes::int as bytes, seconds::int as seconds,
+                    span_s::int as span_s, round(mean_kbit_s, 3) as mean,
+                    round(p5_kbit_s, 3) as p5, round(median_kbit_s, 3) as median,
+                    round(p95_kbit_s, 3) as p95, round(max_kbit_s, 3) as max
+             from object_bitrate_summary where direction = 'created'
+             order by scope desc, track_name`))
+            .toEqual([
+                { scope: "track", track_name: "1.m4s", bytes: 7000, seconds: 3, span_s: 4,
+                  mean: 10, p5: 8, median: 8, p95: 22.4, max: 24 },
+                { scope: "track", track_name: "2.m4s", bytes: 600, seconds: 4, span_s: 4,
+                  mean: 0.8, p5: 0.8, median: 0.8, p95: 0.8, max: 0.8 },
+                { scope: "all", track_name: null, bytes: 7600, seconds: 4, span_s: 4,
+                  mean: 10.8, p5: 2, median: 8.8, p95: 22.4, max: 24.8 },
             ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
