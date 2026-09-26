@@ -1,4 +1,52 @@
-# rules
+# about this directory
+
+This directory defines the database schema and typescript interfaces to use it.
+
+
+# moq transport draft
+
+
+We have discussed doing this with Claude Code before, and I deferred at that time, which was probably right the right call,
+but maybe it's time to offer my help on 1692
+
+- Add Management Considerations, 
+- Way for client to get diagnostic data from relay
+- Create well defined metrics of things that will be used for management
+
+- https://github.com/moq-wg/moq-transport/issues/1683
+- https://github.com/moq-wg/moq-transport/issues/1692
+- https://github.com/moq-wg/moq-transport/issues/1693
+
+
+
+
+# reminders for Cameron
+
+- bandwidth, jitter, loss, latency are measures
+- why the `jitter` view uses RFC 3550 D: [RFC-3550-explained.md](RFC-3550-explained.md)
+- if i have 500 values each would be data points
+- all 500 values would be the bandwidth time series
+- if i have: bandwidth max, min, 95th percentile, median, those are called summary stats.
+
+# what this directory makes available to consumers
+
+1. one single overall session summary, stuff like start-time, number of cid's, maybe locations if availabe? 
+2. a number
+
+
+# rules-1
+
+- Markdown lists measures and why, never columns or types.
+- A chart's frame (summary or series) is a SQL view: named, commented, with a
+  fixture test. CLI users get the same frames the analyzer draws.
+- `QUERIES` holds only `SELECT` + casts + `ORDER BY` from one view, plus the
+  column spec. Casts to INTEGER/DOUBLE live here, not in the view: BIGINT is a
+  JS transport problem.
+- The column spec is the only place columns are listed. It gives the row type,
+  the row check, and the DESCRIBE contract.
+
+
+# rules-2
 
 - `api.ts` is the whole public interface (package.json `exports`). Everything
   else, `QUERIES` included, lives in api-internal.ts. api.test.ts pins the
