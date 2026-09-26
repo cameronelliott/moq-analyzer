@@ -37,6 +37,8 @@ but maybe it's time to offer my help on 1692
 # rules-1
 
 - Markdown lists measures and why, never columns or types.
+- [MEASURES.md](MEASURES.md) lists the measures and the reasons for them. When
+  you add a view or a Capture function, update MEASURES.md in the same commit.
 - A chart's frame (summary or series) is a SQL view: named, commented, with a
   fixture test. CLI users get the same frames the analyzer draws.
 - `QUERIES` holds only `SELECT` + casts + `ORDER BY` from one view, plus the
