@@ -166,18 +166,17 @@ function checkValue(v: unknown, c: Column, fail: (m: string) => CaptureError): s
 /** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
  *  keep BIGINT out of the rows. api.test.ts DESCRIBEs each one against this. */
 export const QUERIES = {
-    // Per subscriber and leg. Means as well as medians: per-leg means sum to the
-    // end-to-end mean and medians do not (see the `leg` view).
+    // The frames are views in schema.sql, where they are explained and tested.
+    // Each entry here only selects, casts, and orders.
     legSummary: {
         sql: `SELECT sub_cid,
-                     leg_no::INTEGER                          AS leg_no,
+                     leg_no::INTEGER    AS leg_no,
                      leg,
-                     count(*)::INTEGER                        AS n,
-                     (avg(us) / 1000)::DOUBLE                 AS mean_ms,
-                     (median(us) / 1000)::DOUBLE              AS median_ms,
-                     (quantile_cont(us, 0.95) / 1000)::DOUBLE AS p95_ms
-              FROM leg
-              GROUP BY ALL
+                     n::INTEGER         AS n,
+                     mean_ms::DOUBLE    AS mean_ms,
+                     median_ms::DOUBLE  AS median_ms,
+                     p95_ms::DOUBLE     AS p95_ms
+              FROM leg_summary
               ORDER BY sub_cid, leg_no`,
         columns: {
             sub_cid: col("VARCHAR", false),
@@ -189,21 +188,16 @@ export const QUERIES = {
             p95_ms: col("DOUBLE", false),
         },
     },
-    // RFC 3550 jitter per subscriber and leg, over the whole session. p99 is here
-    // and not in the series: 40k+ samples make it mean something, ~70 a second
-    // make it the max.
     jitterSummary: {
         sql: `SELECT sub_cid,
-                     leg_no::INTEGER                                 AS leg_no,
+                     leg_no::INTEGER  AS leg_no,
                      leg,
-                     count(*)::INTEGER                               AS n,
-                     (avg(jitter_us) / 1000)::DOUBLE                 AS mean_ms,
-                     (quantile_cont(jitter_us, 0.95) / 1000)::DOUBLE AS p95_ms,
-                     (quantile_cont(jitter_us, 0.99) / 1000)::DOUBLE AS p99_ms,
-                     (max(jitter_us) / 1000)::DOUBLE                 AS max_ms
-              FROM jitter
-              WHERE jitter_us IS NOT NULL
-              GROUP BY ALL
+                     n::INTEGER       AS n,
+                     mean_ms::DOUBLE  AS mean_ms,
+                     p95_ms::DOUBLE   AS p95_ms,
+                     p99_ms::DOUBLE   AS p99_ms,
+                     max_ms::DOUBLE   AS max_ms
+              FROM jitter_summary
               ORDER BY sub_cid, leg_no`,
         columns: {
             sub_cid: col("VARCHAR", false),
@@ -216,25 +210,15 @@ export const QUERIES = {
             max_ms: col("DOUBLE", false),
         },
     },
-    // The same per second, for a time chart. t_s counts from the capture's first
-    // sample, not each subscriber's, so panels share one axis and late joiners
-    // start late. A second with no sample has no row.
     jitterSeries: {
         sql: `SELECT sub_cid,
-                     leg_no::INTEGER                                 AS leg_no,
+                     leg_no::INTEGER  AS leg_no,
                      leg,
-                     (epoch(sec) - epoch(min(sec) OVER ()))::INTEGER AS t_s,
-                     n,
-                     mean_ms,
-                     max_ms
-              FROM (SELECT sub_cid, leg_no, leg,
-                           time_bucket(INTERVAL '1 second', t_end) AS sec,
-                           count(*)::INTEGER               AS n,
-                           (avg(jitter_us) / 1000)::DOUBLE AS mean_ms,
-                           (max(jitter_us) / 1000)::DOUBLE AS max_ms
-                    FROM jitter
-                    WHERE jitter_us IS NOT NULL
-                    GROUP BY ALL)
+                     t_s::INTEGER     AS t_s,
+                     n::INTEGER       AS n,
+                     mean_ms::DOUBLE  AS mean_ms,
+                     max_ms::DOUBLE   AS max_ms
+              FROM jitter_series
               ORDER BY sub_cid, leg_no, t_s`,
         columns: {
             sub_cid: col("VARCHAR", false),

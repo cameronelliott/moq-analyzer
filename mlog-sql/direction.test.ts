@@ -529,61 +529,70 @@ test("interarrival measures one track at one endpoint, and throughput buckets it
     }
 });
 
+/**
+ * Two tracks, interleaved, over pub -> relay -> sub. Per object, in ms:
+ *
+ *   track obj  pub  relay-in  relay-out  sub  | leg1 dwell leg3
+ *   1.m4s  0    10     60        61      100  |  50    1    39
+ *   2.m4s  0    15     65        66      105  |  50    1    39
+ *   1.m4s  1    20     72        74      115  |  52    2    41
+ *   2.m4s  1    25     76        77      117  |  51    1    40
+ *   1.m4s  2    30     79        80      120  |  49    1    40
+ *
+ * D between consecutive arrivals on one track is the change in transit.
+ * A lag that forgot the track would pair 1.m4s with 2.m4s and answer
+ * 0, 2, 1, 2 for leg 1 instead of 2, -3 and 1.
+ *
+ * The subscriber's clock runs a whole second ahead. Leg 3 transit is then
+ * wrong by that second, and D must not notice: both transits carry it. It
+ * also puts leg 3's arrivals in the second after legs 1 and 2's.
+ *
+ * Sizes differ per object, 1.m4s object 0 standing in for a keyframe, so a
+ * row that picked up another object's size shows up.
+ */
+function twoTrackPath(dir: string) {
+    const size1 = [40_000, 1_200, 1_300];
+    const size2 = [500, 600];
+    const hdrs = (alias: number) => [
+        subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
+        subscribe(3, alias + 1, "/bbb", "2.m4s"), subscribeOk(4, alias + 1, alias + 1),
+    ];
+    const side = (dir: Dir, s1: number, s2: number, alias: number,
+                  t1: number[], t2: number[]) => {
+        type Obj = [number, number, number, number];
+        const objs: Obj[] = [
+            ...t1.map((t, i): Obj => [t, s1, i, size1[i]!]),
+            ...t2.map((t, i): Obj => [t, s2, i, size2[i]!]),
+        ].sort((a, b) => a[0] - b[0]);
+        return [
+            ...hdrs(alias),
+            subgroupHeader(dir, 5, s1, alias, 7),
+            subgroupHeader(dir, 5, s2, alias + 1, 7),
+            ...objs.map(([t, s, id, len]) => object(dir, t, s, 7, id, len)),
+        ];
+    };
+    const pub = writeLog(dir, "pub.jsonl", header("client"),
+        side("created", 2, 6, 5, [10, 20, 30], [15, 25]));
+    const relayIn = writeLog(dir, "relay-in.jsonl", header("server"),
+        side("parsed", 2, 6, 4, [60, 72, 79], [65, 76]));
+    const relayOut = writeLog(dir, "relay-out.jsonl", header("server"),
+        side("created", 3, 7, 4, [61, 74, 80], [66, 77]));
+    const sub = writeLog(dir, "sub.jsonl", header("client", REFERENCE_TIME + 1000),
+        side("parsed", 3, 7, 4, [100, 115, 120], [105, 117]));
+
+    const db = join(dir, "path.db");
+    const r = loadInto(db, [
+        { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+        { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+    ]);
+    return { db, ok: r.ok };
+}
+
 test("jitter is RFC 3550's D per leg and track, and a clock offset cancels out", () => {
     const dir = tmp("mlog-jitter-");
     try {
-        // Two tracks, interleaved, over pub -> relay -> sub. Per object, in ms:
-        //
-        //   track obj  pub  relay-in  relay-out  sub  | leg1 dwell leg3
-        //   1.m4s  0    10     60        61      100  |  50    1    39
-        //   2.m4s  0    15     65        66      105  |  50    1    39
-        //   1.m4s  1    20     72        74      115  |  52    2    41
-        //   2.m4s  1    25     76        77      117  |  51    1    40
-        //   1.m4s  2    30     79        80      120  |  49    1    40
-        //
-        // D between consecutive arrivals on one track is the change in transit.
-        // A lag that forgot the track would pair 1.m4s with 2.m4s and answer
-        // 0, 2, 1, 2 for leg 1 instead of 2, -3 and 1.
-        //
-        // The subscriber's clock runs a whole second ahead. Leg 3 transit is then
-        // wrong by that second, and D must not notice: both transits carry it.
-        //
-        // Sizes differ per object, 1.m4s object 0 standing in for a keyframe, so a
-        // row that picked up another object's size shows up.
-        const size1 = [40_000, 1_200, 1_300];
-        const size2 = [500, 600];
-        const hdrs = (alias: number) => [
-            subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
-            subscribe(3, alias + 1, "/bbb", "2.m4s"), subscribeOk(4, alias + 1, alias + 1),
-        ];
-        const side = (dir: Dir, s1: number, s2: number, alias: number,
-                      t1: number[], t2: number[]) => {
-            type Obj = [number, number, number, number];
-            const objs: Obj[] = [
-                ...t1.map((t, i): Obj => [t, s1, i, size1[i]!]),
-                ...t2.map((t, i): Obj => [t, s2, i, size2[i]!]),
-            ].sort((a, b) => a[0] - b[0]);
-            return [
-                ...hdrs(alias),
-                subgroupHeader(dir, 5, s1, alias, 7),
-                subgroupHeader(dir, 5, s2, alias + 1, 7),
-                ...objs.map(([t, s, id, len]) => object(dir, t, s, 7, id, len)),
-            ];
-        };
-        const pub = writeLog(dir, "pub.jsonl", header("client"),
-            side("created", 2, 6, 5, [10, 20, 30], [15, 25]));
-        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"),
-            side("parsed", 2, 6, 4, [60, 72, 79], [65, 76]));
-        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"),
-            side("created", 3, 7, 4, [61, 74, 80], [66, 77]));
-        const sub = writeLog(dir, "sub.jsonl", header("client", REFERENCE_TIME + 1000),
-            side("parsed", 3, 7, 4, [100, 115, 120], [105, 117]));
-
-        const db = join(dir, "jitter.db");
-        expect(loadInto(db, [
-            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
-            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
-        ]).ok).toBe(true);
+        const { db, ok } = twoTrackPath(dir);
+        expect(ok).toBe(true);
 
         // the offset really is there: leg 3 transit is off by a full second
         expect(query<{ us: number }>(db,
@@ -630,6 +639,59 @@ test("jitter is RFC 3550's D per leg and track, and a clock offset cancels out",
                 { track_name: "1.m4s", object_id: 2, payload_length: 1_300,  legs: 3 },
                 { track_name: "2.m4s", object_id: 0, payload_length: 500,    legs: 3 },
                 { track_name: "2.m4s", object_id: 1, payload_length: 600,    legs: 3 },
+            ]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("the frame views summarize leg and jitter per subscriber and leg", () => {
+    const dir = tmp("mlog-frames-");
+    try {
+        const { db, ok } = twoTrackPath(dir);
+        expect(ok).toBe(true);
+
+        // Both tracks together, per leg. Leg 3 carries the subscriber's
+        // one-second clock offset. p95 interpolates: of five sorted values it
+        // sits 0.8 of the way from the fourth to the fifth.
+        expect(query<{ sub_cid: string; leg_no: number; leg: string; n: number;
+                       mean_ms: number; median_ms: number; p95_ms: number }>(db,
+            `select sub_cid, leg_no, leg, n::int as n, round(mean_ms, 3) as mean_ms,
+                    round(median_ms, 3) as median_ms, round(p95_ms, 3) as p95_ms
+             from leg_summary order by leg_no`))
+            .toEqual([
+                { sub_cid: "c2", leg_no: 1, leg: "pub -> relay", n: 5,
+                  mean_ms: 50.4, median_ms: 50, p95_ms: 51.8 },
+                { sub_cid: "c2", leg_no: 2, leg: "relay dwell", n: 5,
+                  mean_ms: 1.2, median_ms: 1, p95_ms: 1.8 },
+                { sub_cid: "c2", leg_no: 3, leg: "relay -> sub", n: 5,
+                  mean_ms: 1039.8, median_ms: 1040, p95_ms: 1040.8 },
+            ]);
+
+        // |D| samples per leg, first objects excluded: leg 1 is 2, 3 and 1 ms,
+        // leg 2 is 1, 1 and 0, leg 3 is 2, 1 and 1.
+        expect(query<{ leg_no: number; n: number; mean_ms: number; p95_ms: number;
+                       p99_ms: number; max_ms: number }>(db,
+            `select leg_no, n::int as n, round(mean_ms, 3) as mean_ms,
+                    round(p95_ms, 3) as p95_ms, round(p99_ms, 3) as p99_ms,
+                    round(max_ms, 3) as max_ms
+             from jitter_summary order by leg_no`))
+            .toEqual([
+                { leg_no: 1, n: 3, mean_ms: 2,     p95_ms: 2.9, p99_ms: 2.98, max_ms: 3 },
+                { leg_no: 2, n: 3, mean_ms: 0.667, p95_ms: 1,   p99_ms: 1,    max_ms: 1 },
+                { leg_no: 3, n: 3, mean_ms: 1.333, p95_ms: 1.9, p99_ms: 1.98, max_ms: 2 },
+            ]);
+
+        // One row per leg and second. t_s counts from the capture's first
+        // sample, so leg 3, read on a clock a second ahead, lands at 1.
+        expect(query<{ leg_no: number; t_s: number; n: number; mean_ms: number; max_ms: number }>(db,
+            `select leg_no, t_s::int as t_s, n::int as n,
+                    round(mean_ms, 3) as mean_ms, round(max_ms, 3) as max_ms
+             from jitter_series order by leg_no, t_s`))
+            .toEqual([
+                { leg_no: 1, t_s: 0, n: 3, mean_ms: 2,     max_ms: 3 },
+                { leg_no: 2, t_s: 0, n: 3, mean_ms: 0.667, max_ms: 1 },
+                { leg_no: 3, t_s: 1, n: 3, mean_ms: 1.333, max_ms: 2 },
             ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });

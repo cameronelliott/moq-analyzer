@@ -515,6 +515,18 @@ JOIN hop h ON h.cid = d.out_cid
                d.group_id, d.subgroup_id, d.object_id)
 WHERE NOT d.held;
 
+-- Latency summary: one row per subscriber and leg, all tracks together, in ms.
+-- Means as well as medians, because per-leg means add up to the end-to-end mean
+-- and medians do not (see `leg`).
+CREATE OR REPLACE VIEW leg_summary AS
+SELECT sub_cid, leg_no, leg,
+       count(*)                          AS n,
+       avg(us) / 1000                    AS mean_ms,
+       median(us) / 1000                 AS median_ms,
+       quantile_cont(us, 0.95) / 1000    AS p95_ms
+FROM leg
+GROUP BY ALL;
+
 -- RFC 3550 6.4.1 interarrival jitter, per leg: D is how much an object's transit
 -- differs from the previous object's on the same track and leg, taken in order
 -- of arrival. One row per object in `leg`; the first per track has no
@@ -550,6 +562,40 @@ FROM (
            us - lag(us) OVER (PARTITION BY sub_cid, leg_no, track_namespace, track_name
                               ORDER BY t_end, group_id, subgroup_id, object_id) AS d_us
     FROM leg
+);
+
+-- Jitter summary: one row per subscriber and leg, all tracks together, in ms of
+-- |D|. The first object of each track has no D and is not counted. p99 is here
+-- and not in the series: 40k+ samples a session make it mean something, ~70 a
+-- second make it the max.
+CREATE OR REPLACE VIEW jitter_summary AS
+SELECT sub_cid, leg_no, leg,
+       count(*)                                AS n,
+       avg(jitter_us) / 1000                   AS mean_ms,
+       quantile_cont(jitter_us, 0.95) / 1000   AS p95_ms,
+       quantile_cont(jitter_us, 0.99) / 1000   AS p99_ms,
+       max(jitter_us) / 1000                   AS max_ms
+FROM jitter
+WHERE jitter_us IS NOT NULL
+GROUP BY ALL;
+
+-- Jitter series: the same per second of arrival, for a time chart. t_s counts
+-- from the capture's first sample, not each subscriber's, so every subscriber
+-- shares one axis and a late joiner starts late. A second with no sample has
+-- no row. One second is safe to bucket in any session zone (see `throughput`).
+CREATE OR REPLACE VIEW jitter_series AS
+SELECT sub_cid, leg_no, leg, sec,
+       epoch(sec) - epoch(min(sec) OVER ()) AS t_s,
+       n, mean_ms, max_ms
+FROM (
+    SELECT sub_cid, leg_no, leg,
+           time_bucket(INTERVAL '1 second', t_end) AS sec,
+           count(*)                                AS n,
+           avg(jitter_us) / 1000                   AS mean_ms,
+           max(jitter_us) / 1000                   AS max_ms
+    FROM jitter
+    WHERE jitter_us IS NOT NULL
+    GROUP BY ALL
 );
 
 -- Chart 2. The gap between an object arriving and the one before it on the same
