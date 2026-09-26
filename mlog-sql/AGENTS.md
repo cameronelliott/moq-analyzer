@@ -44,8 +44,8 @@ but maybe it's time to offer my help on 1692
 - `QUERIES` holds only `SELECT` + casts + `ORDER BY` from one view, plus the
   column spec. Casts to INTEGER/DOUBLE live here, not in the view: BIGINT is a
   JS transport problem.
-- The column spec is the only place columns are listed. It gives the row type,
-  the row check, and the DESCRIBE contract.
+- The column spec is the only place columns are listed, except the public
+  header. It gives the row type, the row check, and the DESCRIBE contract.
 
 
 # rules-2
@@ -53,6 +53,15 @@ but maybe it's time to offer my help on 1692
 - `api.ts` is the whole public interface (package.json `exports`). Everything
   else, `QUERIES` included, lives in api-internal.ts. api.test.ts pins the
   exported values.
+- mlog-sql.d.ts is the public header. Consumers get it under the `types`
+  condition, so they never see an internal type. It is written by hand.
+  api.ts imports its public types from the header and declares none of its own.
+  header-check.ts makes `bun run typecheck` fail when the header's rows or
+  values disagree with the code.
+- mlog-sql throws only CaptureError. An engine error is wrapped, with the
+  original as `cause`.
+- A column with a fixed set of values lists them in its spec. The header gives
+  it a union type, and validateRows refuses any other value.
 - The views are the source of truth: api.ts runs a SELECT over one view per
   query and writes no joins.
 - The .sql files must run in duckdb-wasm: plain SQL, no dot commands. wasm
@@ -60,10 +69,10 @@ but maybe it's time to offer my help on 1692
   check says nothing about the browser -- wasm.test.ts is the check.
 - Tests are `bun test`. streaming.test.ts needs a local mlog.jsonl (gitignored).
 
-# incremental view maintenance (IVM)
+# Incremental View Maintenance (IVM)
 
-- if we support IVM it means summary data computation can run over new rows added (or changed), rather than summary data computation over the entire set of something
-- for streaming mode, IVM is not required, but if it's easy, we should do it, I mean incrementally computing summary data, etc, from batch set updates, not over the whole dataset. we shall see where this goes.
+- when designing streaming or chunking type interfaces, we want to consider whether IVM can be achieved at the database view level. it is not a requirement, but if easy or cheap, we do it.
+- see IVM.md
 
 
 

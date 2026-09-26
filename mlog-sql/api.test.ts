@@ -20,7 +20,8 @@ import {
 } from "@duckdb/duckdb-wasm/blocking";
 import {
     openCapture, CaptureError,
-    type Engine, type TraceSource,
+    type Engine, type TraceSource, type LegSummaryRow, type JitterSummaryRow,
+    type JitterSeriesRow, type ObjectBitrateSeriesRow, type ObjectBitrateSummaryRow,
 } from "./api";
 import { QUERIES, col, recordChunks, validateRows } from "./api-internal";
 
@@ -138,7 +139,7 @@ const FIXTURE: { name: string; cid: string; text: string }[] = [
 const fixtureSources = (piece?: number): TraceSource[] =>
     FIXTURE.map((f) => ({ name: f.name, cid: f.cid, stream: streamOf(f.text, piece) }));
 
-const EXPECTED_LEGS = [
+const EXPECTED_LEGS: LegSummaryRow[] = [
     { sub_cid: "sub1", leg_no: 1, leg: "pub -> relay", n: 3, mean_ms: 50, median_ms: 50, p95_ms: 50 },
     { sub_cid: "sub1", leg_no: 2, leg: "relay dwell",  n: 3, mean_ms: 1,  median_ms: 1,  p95_ms: 1 },
     { sub_cid: "sub1", leg_no: 3, leg: "relay -> sub", n: 3, mean_ms: 39, median_ms: 39, p95_ms: 39 },
@@ -152,12 +153,12 @@ const EXPECTED_TRUST = [
 // Every leg's transit is constant, so D is zero throughout: this pins the
 // plumbing, and direction.test.ts pins the arithmetic. Three objects give two
 // samples each, all in the capture's first second.
-const EXPECTED_JITTER_SUMMARY = [1, 2, 3].map((leg_no) => ({
+const EXPECTED_JITTER_SUMMARY = ([1, 2, 3] as const).map((leg_no): JitterSummaryRow => ({
     sub_cid: "sub1", leg_no, leg: EXPECTED_LEGS[leg_no - 1]!.leg,
     n: 2, mean_ms: 0, p95_ms: 0, p99_ms: 0, max_ms: 0,
 }));
 
-const EXPECTED_JITTER_SERIES = [1, 2, 3].map((leg_no) => ({
+const EXPECTED_JITTER_SERIES = ([1, 2, 3] as const).map((leg_no): JitterSeriesRow => ({
     sub_cid: "sub1", leg_no, leg: EXPECTED_LEGS[leg_no - 1]!.leg,
     t_s: 0, n: 2, mean_ms: 0, max_ms: 0,
 }));
@@ -169,17 +170,17 @@ const BITRATE_ENDS = [
     { cid: "pub",  vantage_point: "server", direction: "parsed" },
     { cid: "sub1", vantage_point: "client", direction: "parsed" },
     { cid: "sub1", vantage_point: "server", direction: "created" },
-];
+] as const;
 const SCOPES = [
     { scope: "all",   track_namespace: null,   track_name: null },
     { scope: "track", track_namespace: "/bbb", track_name: "1.m4s" },
-];
+] as const;
 
-const EXPECTED_BITRATE_SERIES = BITRATE_ENDS.flatMap((e) => SCOPES.map((s) => ({
+const EXPECTED_BITRATE_SERIES = BITRATE_ENDS.flatMap((e) => SCOPES.map((s): ObjectBitrateSeriesRow => ({
     ...e, ...s, t_s: 0, objects: 3, bytes: 3 * 1271, kbit_s: 3 * 1271 * 8 / 1000,
 })));
 
-const EXPECTED_BITRATE_SUMMARY = BITRATE_ENDS.flatMap((e) => SCOPES.map((s) => ({
+const EXPECTED_BITRATE_SUMMARY = BITRATE_ENDS.flatMap((e) => SCOPES.map((s): ObjectBitrateSummaryRow => ({
     ...e, ...s, bytes: 3 * 1271, seconds: 0, span_s: 0,
     mean_kbit_s: null, p5_kbit_s: null, median_kbit_s: null, p95_kbit_s: null, max_kbit_s: null,
 })));
@@ -301,10 +302,49 @@ describe("openCapture", () => {
         const { engine, reset } = await nodeEngine();
         try {
             await openCapture(engine, fixtureSources());
-            await expect(openCapture(engine, fixtureSources())).rejects.toThrow(/already holds/);
+            const err = await openCapture(engine, fixtureSources()).catch((e: unknown) => e);
+            expect(err).toBeInstanceOf(CaptureError);
+            if (!(err instanceof CaptureError)) return;
+            expect(err.failure.kind).toBe("engine-used");
+            expect(err.message).toMatch(/already holds/);
         } finally {
             reset();
         }
+    });
+
+    // A fake engine: it fails on the SQL that starts with `failOn`, and answers
+    // everything else with the rows openCapture expects of an empty database.
+    const fakeEngine = (failOn: string): Engine => ({
+        registerFileBuffer: async () => undefined,
+        dropFile: async () => undefined,
+        connect: async () => {
+            if (failOn === "connect") throw new TypeError("no worker");
+            return {
+                query: async (sql) => {
+                    if (sql.trimStart().startsWith(failOn)) throw new Error("extension fetch failed");
+                    return sql.startsWith("SELECT count(*)") ? [{ n: 0 }] : [];
+                },
+            };
+        },
+    });
+
+    const engineFailure = async (p: Promise<unknown>) => {
+        const err = await p.catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(CaptureError);
+        if (!(err instanceof CaptureError)) return;
+        expect(err.failure.kind).toBe("engine");
+        expect(err.cause).toBeInstanceOf(Error);
+    };
+
+    test("an engine that cannot connect is a CaptureError", () =>
+        engineFailure(openCapture(fakeEngine("connect"), [])));
+
+    test("a schema that fails to load is a CaptureError", () =>
+        engineFailure(openCapture(fakeEngine("--"), [])));
+
+    test("a query that fails in a Capture method is a CaptureError", async () => {
+        const cap = await openCapture(fakeEngine("SELECT sub_cid"), []);
+        await engineFailure(cap.legSummary());
     });
 });
 
@@ -352,6 +392,15 @@ describe("validateRows", () => {
     test("fraction in an INTEGER", () => fails([{ s: "x", n: 1.5 }], /expected INTEGER/));
     test("missing column", () => fails([{ s: "x" }], /missing/));
     test("extra column", () => fails([{ s: "x", n: 1, z: 0 }], /not in the spec/));
+
+    const fixed = { sql: "", columns: { s: col("VARCHAR", false, ["a", "b"]), n: col("INTEGER", true, [1, 2]) } };
+    test("a value in the set passes", () => {
+        expect(validateRows("q", fixed, [{ s: "b", n: null }])).toEqual([{ s: "b", n: null }]);
+    });
+    test("a value outside the set", () => {
+        expect(() => validateRows("q", fixed, [{ s: "c", n: 1 }])).toThrow(/not one of/);
+        expect(() => validateRows("q", fixed, [{ s: "a", n: 3 }])).toThrow(/not one of/);
+    });
 });
 
 // --- real capture -----------------------------------------------------------

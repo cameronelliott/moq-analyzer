@@ -2,26 +2,37 @@
 // whole-record chunks, and checking query rows against a column spec. Private
 // to mlog-sql -- html4 imports api.ts only, which re-exports what it needs.
 
-// --- errors -----------------------------------------------------------------
+import type { CaptureFailure } from "./mlog-sql.d.ts";
 
-export type CaptureFailure =
-    | { readonly kind: "load"; readonly trace: string; readonly message: string }
-    | {
-        readonly kind: "row";
-        readonly query: string;
-        readonly row: number;
-        readonly column: string;
-        readonly message: string;
-    };
+// --- errors -----------------------------------------------------------------
 
 export class CaptureError extends Error {
     readonly failure: CaptureFailure;
-    constructor(failure: CaptureFailure) {
-        super(failure.kind === "load"
-            ? `load failed for "${failure.trace}": ${failure.message}`
-            : `${failure.query} row ${failure.row}, column ${failure.column}: ${failure.message}`);
+    constructor(failure: CaptureFailure, options?: ErrorOptions) {
+        super(describe(failure), options);
         this.name = "CaptureError";
         this.failure = failure;
+    }
+}
+
+function describe(f: CaptureFailure): string {
+    switch (f.kind) {
+        case "load": return `load failed for "${f.trace}": ${f.message}`;
+        case "row": return `${f.query} row ${f.row}, column ${f.column}: ${f.message}`;
+        case "engine": return `engine failed: ${f.message}`;
+        case "engine-used": return "this engine already holds a capture; use a new engine";
+    }
+}
+
+/** Anything the engine throws becomes a CaptureError, so callers catch one type. */
+export async function onEngine<T>(step: () => Promise<T>): Promise<T> {
+    try {
+        return await step();
+    } catch (e) {
+        if (e instanceof CaptureError) throw e;
+        throw new CaptureError(
+            { kind: "engine", message: e instanceof Error ? e.message : String(e) },
+            { cause: e });
     }
 }
 
@@ -89,12 +100,15 @@ export type SqlType = "VARCHAR" | "INTEGER" | "DOUBLE";
 export interface Column {
     readonly type: SqlType;
     readonly nullable: boolean;
+    /** When present, the only values the column may hold (besides NULL). */
+    readonly values?: readonly (string | number)[];
 }
 
 export type Columns = Readonly<Record<string, Column>>;
 
 type Value<C extends Column> =
-    | (C["type"] extends "VARCHAR" ? string : number)
+    | (C extends { readonly values: readonly (infer V)[] } ? V
+        : C["type"] extends "VARCHAR" ? string : number)
     | (C["nullable"] extends true ? null : never);
 
 export type Row<C extends Columns> = { readonly [K in keyof C]: Value<C[K]> };
@@ -106,8 +120,15 @@ export interface QuerySpec<C extends Columns> {
     readonly columns: C;
 }
 
-export const col = <T extends SqlType, N extends boolean>(type: T, nullable: N) =>
-    ({ type, nullable });
+type Js<T extends SqlType> = T extends "VARCHAR" ? string : number;
+
+/** A column. `values`, when given, is the fixed set the view can produce. */
+export function col<T extends SqlType, N extends boolean>(type: T, nullable: N): { type: T; nullable: N };
+export function col<T extends SqlType, N extends boolean, const V extends readonly Js<T>[]>(
+    type: T, nullable: N, values: V): { type: T; nullable: N; values: V };
+export function col(type: SqlType, nullable: boolean, values?: readonly (string | number)[]) {
+    return values === undefined ? { type, nullable } : { type, nullable, values };
+}
 
 /** Check rows from the engine against a spec. Throws on the first mismatch. */
 export function validateRows<C extends Columns>(
@@ -144,6 +165,14 @@ function checkValue(v: unknown, c: Column, fail: (m: string) => CaptureError): s
         if (c.nullable) return null;
         throw fail(`NULL in a NOT NULL ${c.type} column`);
     }
+    const typed = checkType(v, c, fail);
+    if (c.values !== undefined && !c.values.includes(typed)) {
+        throw fail(`${JSON.stringify(typed)} is not one of ${JSON.stringify(c.values)}`);
+    }
+    return typed;
+}
+
+function checkType(v: unknown, c: Column, fail: (m: string) => CaptureError): string | number {
     if (typeof v === "bigint") {
         throw fail(`BIGINT reached the row (${v}); cast it to ${c.type} in the query`);
     }
@@ -163,6 +192,13 @@ function checkValue(v: unknown, c: Column, fail: (m: string) => CaptureError): s
 
 // --- queries ----------------------------------------------------------------
 
+// The fixed sets the views produce, from schema.sql: the `leg` view's three
+// legs, the `direction` ENUM, and object_bitrate_series's grouping.
+const LEG_NOS = [1, 2, 3] as const;
+const LEGS = ["pub -> relay", "relay dwell", "relay -> sub"] as const;
+const DIRECTIONS = ["created", "parsed"] as const;
+const SCOPES = ["all", "track"] as const;
+
 /** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
  *  keep BIGINT out of the rows. api.test.ts DESCRIBEs each one against this. */
 export const QUERIES = {
@@ -180,8 +216,8 @@ export const QUERIES = {
               ORDER BY sub_cid, leg_no`,
         columns: {
             sub_cid: col("VARCHAR", false),
-            leg_no: col("INTEGER", false),
-            leg: col("VARCHAR", false),
+            leg_no: col("INTEGER", false, LEG_NOS),
+            leg: col("VARCHAR", false, LEGS),
             n: col("INTEGER", false),
             mean_ms: col("DOUBLE", false),
             median_ms: col("DOUBLE", false),
@@ -201,8 +237,8 @@ export const QUERIES = {
               ORDER BY sub_cid, leg_no`,
         columns: {
             sub_cid: col("VARCHAR", false),
-            leg_no: col("INTEGER", false),
-            leg: col("VARCHAR", false),
+            leg_no: col("INTEGER", false, LEG_NOS),
+            leg: col("VARCHAR", false, LEGS),
             n: col("INTEGER", false),
             mean_ms: col("DOUBLE", false),
             p95_ms: col("DOUBLE", false),
@@ -222,8 +258,8 @@ export const QUERIES = {
               ORDER BY sub_cid, leg_no, t_s`,
         columns: {
             sub_cid: col("VARCHAR", false),
-            leg_no: col("INTEGER", false),
-            leg: col("VARCHAR", false),
+            leg_no: col("INTEGER", false, LEG_NOS),
+            leg: col("VARCHAR", false, LEGS),
             t_s: col("INTEGER", false),
             n: col("INTEGER", false),
             mean_ms: col("DOUBLE", false),
@@ -247,8 +283,8 @@ export const QUERIES = {
         columns: {
             cid: col("VARCHAR", false),
             vantage_point: col("VARCHAR", false),
-            direction: col("VARCHAR", false),
-            scope: col("VARCHAR", false),
+            direction: col("VARCHAR", false, DIRECTIONS),
+            scope: col("VARCHAR", false, SCOPES),
             track_namespace: col("VARCHAR", true),   // NULL on `all` rows and unresolved tracks
             track_name: col("VARCHAR", true),
             t_s: col("INTEGER", false),
@@ -277,8 +313,8 @@ export const QUERIES = {
         columns: {
             cid: col("VARCHAR", false),
             vantage_point: col("VARCHAR", false),
-            direction: col("VARCHAR", false),
-            scope: col("VARCHAR", false),
+            direction: col("VARCHAR", false, DIRECTIONS),
+            scope: col("VARCHAR", false, SCOPES),
             track_namespace: col("VARCHAR", true),
             track_name: col("VARCHAR", true),
             bytes: col("DOUBLE", false),

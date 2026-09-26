@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./api.ts"
+    ".": {
+      "types": "./mlog-sql.d.ts",
+      "default": "./api.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -15,61 +15,14 @@
 import schemaSql from "./schema.sql" with { type: "text" };
 import loadSql from "./load.sql" with { type: "text" };
 import {
-    CaptureError, QUERIES, col, recordChunks, sqlString, validateRows,
-    type Columns, type QuerySpec, type Row,
+    CaptureError, QUERIES, col, onEngine, recordChunks, sqlString, validateRows,
+    type Columns, type QuerySpec,
 } from "./api-internal";
+import type { Capture, CaptureOptions, Conn, Engine, TraceSource } from "./mlog-sql.d.ts";
 
-export { CaptureError, type CaptureFailure } from "./api-internal";
-
-// --- what the caller supplies -----------------------------------------------
-
-/** One connection. The adapter turns duckdb-wasm's Arrow result into plain
- *  rows (`toArray().map(r => r.toJSON())`); api.ts checks them. */
-export interface Conn {
-    query(sql: string): Promise<unknown[]>;
-}
-
-/** The part of a duckdb-wasm database api.ts uses. The browser's AsyncDuckDB
- *  and the node build both fit behind a few lines of adapter. */
-export interface Engine {
-    registerFileBuffer(name: string, bytes: Uint8Array): Promise<void>;
-    dropFile(name: string): Promise<void>;
-    connect(): Promise<Conn>;
-}
-
-export interface TraceSource {
-    /** Becomes trace.filename: the trace's identity, so unique per capture. */
-    readonly name: string;
-    /** Connection id. The only thing that ties a connection's two traces together. */
-    readonly cid: string;
-    /** Plain mlog bytes, gzip already removed. */
-    readonly stream: ReadableStream<Uint8Array>;
-}
-
-export interface CaptureOptions {
-    /** Bytes per load chunk. Smaller means less memory, more per-chunk work. */
-    readonly chunkBytes?: number;
-}
-
-// --- what comes back --------------------------------------------------------
-
-// The SQL and column specs live in api-internal.ts as QUERIES; these row types
-// are what the caller sees of them.
-export type LegSummaryRow = Row<typeof QUERIES.legSummary.columns>;
-export type TrustRow = Row<typeof QUERIES.trust.columns>;
-export type JitterSummaryRow = Row<typeof QUERIES.jitterSummary.columns>;
-export type JitterSeriesRow = Row<typeof QUERIES.jitterSeries.columns>;
-export type ObjectBitrateSummaryRow = Row<typeof QUERIES.objectBitrateSummary.columns>;
-export type ObjectBitrateSeriesRow = Row<typeof QUERIES.objectBitrateSeries.columns>;
-
-export interface Capture {
-    legSummary(): Promise<LegSummaryRow[]>;
-    trust(): Promise<TrustRow[]>;
-    jitterSummary(): Promise<JitterSummaryRow[]>;
-    jitterSeries(): Promise<JitterSeriesRow[]>;
-    objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
-    objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
-}
+// The public types are declared once, in the header; api.ts implements them.
+export type * from "./mlog-sql.d.ts";
+export { CaptureError } from "./api-internal";
 
 // --- loading ----------------------------------------------------------------
 
@@ -79,35 +32,30 @@ const DEFAULT_CHUNK_BYTES = 4 * 1024 * 1024;
 // captures in one page from registering the same name.
 let bufferSeq = 0;
 
-/**
- * Load every trace, in order, on one connection, and return the queries.
- * Throws CaptureError. After a failure the engine holds a partial load, so
- * the caller discards it and starts a new one.
- */
+/** mlog-sql.d.ts documents this; load failures are wrapped in loadTrace, the
+ *  rest of the engine's errors by onEngine. */
 export async function openCapture(
     engine: Engine,
     traces: readonly TraceSource[],
     options: CaptureOptions = {},
 ): Promise<Capture> {
     const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
-    const conn = await engine.connect();
-    await conn.query(schemaSql);
+    const conn = await onEngine(async () => {
+        const c = await engine.connect();
+        await c.query(schemaSql);
+        return c;
+    });
 
-    const held = validateRows("openCapture", {
+    const held = await onEngine(async () => validateRows("openCapture", {
         sql: "",
         columns: { n: col("INTEGER", false) },
-    }, await conn.query("SELECT count(*)::INTEGER AS n FROM trace"));
-    if ((held[0]?.n ?? 0) > 0) {
-        throw new CaptureError({
-            kind: "load", trace: "*",
-            message: "this engine already holds a capture; use a new engine",
-        });
-    }
+    }, await conn.query("SELECT count(*)::INTEGER AS n FROM trace")));
+    if ((held[0]?.n ?? 0) > 0) throw new CaptureError({ kind: "engine-used" });
 
     for (const t of traces) await loadTrace(engine, conn, t, chunkBytes);
 
-    const run = async <C extends Columns>(name: string, spec: QuerySpec<C>) =>
-        validateRows(name, spec, await conn.query(spec.sql));
+    const run = <C extends Columns>(name: string, spec: QuerySpec<C>) =>
+        onEngine(async () => validateRows(name, spec, await conn.query(spec.sql)));
 
     return {
         legSummary: () => run("legSummary", QUERIES.legSummary),

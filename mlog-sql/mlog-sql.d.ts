@@ -1,0 +1,172 @@
+// The public header: everything a consumer's compiler sees of mlog-sql.
+// package.json "exports" serves it under the "types" condition, and api.ts
+// under "default" at runtime, so no internal type reaches a consumer.
+// api.ts imports its public types from here. header-check.ts fails `tsc` when
+// the values or the row types disagree with api.ts.
+
+// --- what the caller supplies -----------------------------------------------
+
+/** One connection. The adapter turns duckdb-wasm's Arrow result into plain
+ *  rows (`toArray().map(r => r.toJSON())`); mlog-sql checks them. */
+export interface Conn {
+    query(sql: string): Promise<unknown[]>;
+}
+
+/** The part of a duckdb-wasm database mlog-sql uses. The browser's AsyncDuckDB
+ *  and the node build both fit behind a few lines of adapter. */
+export interface Engine {
+    registerFileBuffer(name: string, bytes: Uint8Array): Promise<void>;
+    dropFile(name: string): Promise<void>;
+    connect(): Promise<Conn>;
+}
+
+export interface TraceSource {
+    /** Becomes trace.filename: the trace's identity, so unique per capture. */
+    readonly name: string;
+    /** Connection id. The only thing that ties a connection's two traces together. */
+    readonly cid: string;
+    /** Plain mlog bytes, gzip already removed. */
+    readonly stream: ReadableStream<Uint8Array>;
+}
+
+export interface CaptureOptions {
+    /** Bytes per load chunk. Smaller means less memory, more per-chunk work. */
+    readonly chunkBytes?: number;
+}
+
+// --- errors -----------------------------------------------------------------
+
+export type CaptureFailure =
+    /** A trace failed to load. */
+    | { readonly kind: "load"; readonly trace: string; readonly message: string }
+    /** A row did not match its columns: a bug in mlog-sql, or an engine version it was not tested with. */
+    | {
+        readonly kind: "row";
+        readonly query: string;
+        readonly row: number;
+        readonly column: string;
+        readonly message: string;
+    }
+    /** The engine failed outside a trace load: connect, schema, or a query. The engine's error is `cause`. */
+    | { readonly kind: "engine"; readonly message: string }
+    /** The engine already holds a capture. Use a new engine. */
+    | { readonly kind: "engine-used" };
+
+/** The only error mlog-sql throws. */
+export declare class CaptureError extends Error {
+    readonly failure: CaptureFailure;
+    constructor(failure: CaptureFailure, options?: ErrorOptions);
+}
+
+// --- what comes back --------------------------------------------------------
+// One row type per query. MEASURES.md says what each measure is and why.
+
+/** `created`: an end sent it. `parsed`: an end received it. */
+export type Direction = "created" | "parsed";
+/** `all` sums every track of one end, direction and second. */
+export type Scope = "all" | "track";
+/** Legs of one object's path, in order. `leg_no` and `leg` always pair the same way. */
+export type LegNo = 1 | 2 | 3;
+export type Leg = "pub -> relay" | "relay dwell" | "relay -> sub";
+
+export interface LegSummaryRow {
+    readonly sub_cid: string;
+    readonly leg_no: LegNo;
+    readonly leg: Leg;
+    readonly n: number;
+    readonly mean_ms: number;
+    readonly median_ms: number;
+    readonly p95_ms: number;
+}
+
+export interface TrustRow {
+    readonly cid: string;
+    /** NULL when nothing was sent on the connection. */
+    readonly sender_is: string | null;
+    readonly sent: number;
+    readonly received: number;
+    readonly joined: number;
+    readonly lost: number;
+    readonly outside_window: number;
+    readonly negative_hops: number;
+}
+
+export interface JitterSummaryRow {
+    readonly sub_cid: string;
+    readonly leg_no: LegNo;
+    readonly leg: Leg;
+    readonly n: number;
+    readonly mean_ms: number;
+    readonly p95_ms: number;
+    readonly p99_ms: number;
+    readonly max_ms: number;
+}
+
+export interface JitterSeriesRow {
+    readonly sub_cid: string;
+    readonly leg_no: LegNo;
+    readonly leg: Leg;
+    readonly t_s: number;
+    readonly n: number;
+    readonly mean_ms: number;
+    readonly max_ms: number;
+}
+
+export interface ObjectBitrateSummaryRow {
+    readonly cid: string;
+    /** As the log wrote it, unchecked. */
+    readonly vantage_point: string;
+    readonly direction: Direction;
+    readonly scope: Scope;
+    readonly track_namespace: string | null;
+    readonly track_name: string | null;
+    readonly bytes: number;
+    readonly seconds: number;
+    readonly span_s: number;
+    /** NULL when the end's log is two seconds or shorter. */
+    readonly mean_kbit_s: number | null;
+    /** This and the rest: also NULL when no second of the interior has data. */
+    readonly p5_kbit_s: number | null;
+    readonly median_kbit_s: number | null;
+    readonly p95_kbit_s: number | null;
+    readonly max_kbit_s: number | null;
+}
+
+export interface ObjectBitrateSeriesRow {
+    readonly cid: string;
+    /** As the log wrote it, unchecked. */
+    readonly vantage_point: string;
+    readonly direction: Direction;
+    readonly scope: Scope;
+    /** NULL on `all` rows and unresolved tracks. */
+    readonly track_namespace: string | null;
+    readonly track_name: string | null;
+    readonly t_s: number;
+    readonly objects: number;
+    readonly bytes: number;
+    readonly kbit_s: number;
+}
+
+/** Every method throws CaptureError only. */
+export interface Capture {
+    legSummary(): Promise<LegSummaryRow[]>;
+    trust(): Promise<TrustRow[]>;
+    jitterSummary(): Promise<JitterSummaryRow[]>;
+    jitterSeries(): Promise<JitterSeriesRow[]>;
+    objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
+    objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
+}
+
+// --- loading ----------------------------------------------------------------
+
+/**
+ * Load every trace, in order, on one connection, and return the queries.
+ * One capture per engine: an engine that already holds traces is refused.
+ * Throws CaptureError only. After a failure the engine holds a partial load, so
+ * the caller discards it and starts a new one.
+ */
+export declare function openCapture(
+    engine: Engine,
+    traces: readonly TraceSource[],
+    options?: CaptureOptions,
+): Promise<Capture>;
