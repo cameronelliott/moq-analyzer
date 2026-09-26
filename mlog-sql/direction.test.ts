@@ -51,7 +51,8 @@ const subgroupHeader = (dir: Dir, time: number, stream: number, alias: number, g
     },
 });
 
-const object = (dir: Dir, time: number, stream: number, group: number, objectId: number) => ({
+const object = (dir: Dir, time: number, stream: number, group: number, objectId: number,
+                payloadLength = 1271) => ({
     time,
     name: `moqt:subgroup_object_${dir}`,
     data: {
@@ -61,7 +62,7 @@ const object = (dir: Dir, time: number, stream: number, group: number, objectId:
         subgroup_id: 0,
         object_id: objectId,
         extension_headers: [],
-        object_payload_length: 1271,
+        object_payload_length: payloadLength,
     },
 });
 
@@ -546,21 +547,27 @@ test("jitter is RFC 3550's D per leg and track, and a clock offset cancels out",
         //
         // The subscriber's clock runs a whole second ahead. Leg 3 transit is then
         // wrong by that second, and D must not notice: both transits carry it.
+        //
+        // Sizes differ per object, 1.m4s object 0 standing in for a keyframe, so a
+        // row that picked up another object's size shows up.
+        const size1 = [40_000, 1_200, 1_300];
+        const size2 = [500, 600];
         const hdrs = (alias: number) => [
             subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
             subscribe(3, alias + 1, "/bbb", "2.m4s"), subscribeOk(4, alias + 1, alias + 1),
         ];
         const side = (dir: Dir, s1: number, s2: number, alias: number,
                       t1: number[], t2: number[]) => {
-            const objs: [number, number, number][] = [
-                ...t1.map((t, i): [number, number, number] => [t, s1, i]),
-                ...t2.map((t, i): [number, number, number] => [t, s2, i]),
+            type Obj = [number, number, number, number];
+            const objs: Obj[] = [
+                ...t1.map((t, i): Obj => [t, s1, i, size1[i]!]),
+                ...t2.map((t, i): Obj => [t, s2, i, size2[i]!]),
             ].sort((a, b) => a[0] - b[0]);
             return [
                 ...hdrs(alias),
                 subgroupHeader(dir, 5, s1, alias, 7),
                 subgroupHeader(dir, 5, s2, alias + 1, 7),
-                ...objs.map(([t, s, id]) => object(dir, t, s, 7, id)),
+                ...objs.map(([t, s, id, len]) => object(dir, t, s, 7, id, len)),
             ];
         };
         const pub = writeLog(dir, "pub.jsonl", header("client"),
@@ -610,6 +617,20 @@ test("jitter is RFC 3550's D per leg and track, and a clock offset cancels out",
         expect(query<{ sub_cid: string; n: number }>(db,
             "select sub_cid, count(*)::int as n from jitter group by 1"))
             .toEqual([{ sub_cid: "c2", n: 15 }]);
+
+        // each object's size rides along on all three of its legs, so a chart can
+        // split keyframes from the rest
+        expect(query<{ track_name: string; object_id: number; payload_length: number; legs: number }>(db,
+            `select track_name, object_id, payload_length::int as payload_length,
+                    count(*)::int as legs
+             from jitter group by all order by track_name, object_id`))
+            .toEqual([
+                { track_name: "1.m4s", object_id: 0, payload_length: 40_000, legs: 3 },
+                { track_name: "1.m4s", object_id: 1, payload_length: 1_200,  legs: 3 },
+                { track_name: "1.m4s", object_id: 2, payload_length: 1_300,  legs: 3 },
+                { track_name: "2.m4s", object_id: 0, payload_length: 500,    legs: 3 },
+                { track_name: "2.m4s", object_id: 1, payload_length: 600,    legs: 3 },
+            ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }

@@ -361,6 +361,7 @@ SELECT
     hin.t_recv  AS t_in,
     hout.t_send AS t_out,
     datediff('microsecond', hin.t_recv, hout.t_send) AS us,
+    hin.payload_length,
     -- The relay already had this object when the subscriber asked for it, so its
     -- dwell is how long the subscriber took to arrive, not how long the relay
     -- took to forward. Both timestamps are the relay's own clock on two of its
@@ -488,13 +489,13 @@ GROUP BY o.cid;
 CREATE OR REPLACE VIEW leg AS
 SELECT d.out_cid AS sub_cid, d.in_cid, 2 AS leg_no, 'relay dwell' AS leg,
        d.track_namespace, d.track_name, d.group_id, d.subgroup_id, d.object_id,
-       d.t_in AS t_start, d.t_out AS t_end, d.us
+       d.t_in AS t_start, d.t_out AS t_end, d.us, d.payload_length
 FROM dwell d
 WHERE NOT d.held
 UNION ALL
 SELECT d.out_cid, d.in_cid, 1, 'pub -> relay',
        h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
-       h.t_send, h.t_recv, h.us
+       h.t_send, h.t_recv, h.us, h.payload_length
 FROM dwell d
 JOIN hop h ON h.cid = d.in_cid
           AND (h.track_namespace, h.track_name,
@@ -505,7 +506,7 @@ WHERE NOT d.held
 UNION ALL
 SELECT d.out_cid, d.in_cid, 3, 'relay -> sub',
        h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
-       h.t_send, h.t_recv, h.us
+       h.t_send, h.t_recv, h.us, h.payload_length
 FROM dwell d
 JOIN hop h ON h.cid = d.out_cid
           AND (h.track_namespace, h.track_name,
@@ -525,8 +526,15 @@ WHERE NOT d.held;
 --
 -- d_us is signed, as the RFC defines D: positive means this object took longer
 -- than the one before. jitter_us is |D|, the sample the RFC's J averages. The
--- RFC's running 1/16 filter is left to the caller; a mean of jitter_us over a
--- window is the same estimate without the recursion.
+-- RFC's running 1/16 filter is left to the caller. A windowed mean of jitter_us
+-- is comparable to J but not the same: J weights recent samples exponentially,
+-- a mean weights them all alike.
+--
+-- Transit here runs from the sender's log to the receiver's, so it includes
+-- serializing the object: a keyframe takes longer than the frame after it, and
+-- D jumps at every such boundary whatever the network did. payload_length is
+-- carried so a chart can split by size rather than read GOP structure as
+-- jitter. Each leg reports the size its own sender logged.
 --
 -- Built on `leg`, so held objects are already out, and each subscriber gets
 -- its own leg 1 series even though that hop is shared.
@@ -534,6 +542,7 @@ CREATE OR REPLACE VIEW jitter AS
 SELECT sub_cid, leg_no, leg,
        track_namespace, track_name, group_id, subgroup_id, object_id,
        t_end,
+       payload_length,
        d_us,
        abs(d_us) AS jitter_us
 FROM (
