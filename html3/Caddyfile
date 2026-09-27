@@ -1,8 +1,0 @@
-# Serves the last build of _site as plain static files -- what a deploy would
-# serve, next to `bun run dev`'s live-reloading server on 8081. Run by the user
-# unit caddy-html3.service.
-
-:8080 {
-	root * /home/c/moq/a2/html3-static/_site
-	file_server browse
-}
