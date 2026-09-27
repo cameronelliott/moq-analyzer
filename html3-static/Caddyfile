@@ -3,6 +3,6 @@
 # unit caddy-html3.service.
 
 :8080 {
-	root * /home/c/moq/a2/html3/_site
+	root * /home/c/moq/a2/html3-static/_site
 	file_server browse
 }

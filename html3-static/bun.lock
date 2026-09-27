@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "html3",
+      "name": "html3-static",
       "dependencies": {
         "@awesome.me/webawesome": "3.13.0",
         "echarts": "6.1.0",

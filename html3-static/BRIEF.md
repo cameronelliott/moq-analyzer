@@ -156,7 +156,7 @@ and rendering a broken chart as an error in place instead of killing the page.
   export condition: a dev-mode warning on every page and ~16K of bundle. It is a
   resolve-condition fix, not a `NODE_ENV` one. Applies as soon as `app-echart`
   is a Lit element.
-- Eleventy finds its config **by cwd**. Run from `html3/`, or it falls back to
+- Eleventy finds its config **by cwd**. Run from `html3-static/`, or it falls back to
   input `.` and output `_site` and renders whatever directory it is standing in.
   This has already happened once.
 - Eleventy does not bundle, and `--serve` rebuilds pages only. Hook `bun build`

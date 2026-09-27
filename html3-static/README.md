@@ -1,4 +1,4 @@
-# html3
+# html3-static
 
 chartdown: markdown pages with charts, and capture dashboards, built by
 Eleventy on Web Awesome. A chart is drawn to SVG at build time and redrawn as
