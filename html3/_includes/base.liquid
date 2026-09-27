@@ -85,14 +85,14 @@
       }
       .card wa-icon { color: var(--wa-color-text-quiet); }
       .card app-echart, .card app-echart:not(:defined) { margin-block: 0; }
-      /* No wrap: a long key squeezes itself rather than pushing the link to
-         a line of its own. */
-      .card-foot {
-        flex-wrap: nowrap;
-        align-items: baseline;
-        margin-block-start: auto;
-        color: var(--wa-color-text-quiet);
+      /* The title is the link to the card's page: heading ink, a quiet
+         underline that goes loud on hover. */
+      .card h2 a {
+        color: inherit;
+        text-decoration-color: var(--wa-color-surface-border);
+        text-underline-offset: 0.2em;
       }
+      .card h2 a:hover { text-decoration-color: currentColor; }
 
       /* A share of a whole: one bar split by count, and a row per part. */
       .bar {
@@ -115,6 +115,14 @@
         border-block-start: var(--wa-border-width-s) solid var(--wa-color-surface-border);
       }
       .rows li > :last-child { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+      /* A distribution's quantiles, side by side under its histogram. */
+      .quantiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+        margin: 0;
+      }
+      .quantiles dt { color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-xs); }
+      .quantiles dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wa-font-weight-semibold); }
       .dot { inline-size: 0.625rem; block-size: 0.625rem; border-radius: 2px; }
       .success { background: var(--wa-color-success-fill-loud); color: var(--wa-color-success-on-loud); }
       /* The same gray the card charts use for what is compared against. */

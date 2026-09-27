@@ -1,0 +1,44 @@
+{%- comment -%}
+A measure card for one mlog-sql Distribution.
+  d       the Distribution, or null when the measure has no samples
+  id      unique on the page, for the tooltip
+  title   href   about
+  tail    the quantile that leads: p99 where high is bad, p5 where low is bad
+  shown   the quantiles under the chart, comma-separated
+  samples what one sample is, plural: "deliveries", "seconds"
+{%- endcomment -%}
+<section class="card wa-stack">
+  <div class="wa-cluster wa-gap-xs">
+    <h2 class="wa-heading-m"><a href="{{ href }}">{{ title }}</a></h2>
+    <wa-icon id="about-{{ id }}" name="circle-info" label="About {{ title | downcase }}" tabindex="0"></wa-icon>
+    <wa-tooltip for="about-{{ id }}">{{ about }}</wa-tooltip>
+  </div>
+{%- if d %}
+  <div class="wa-stack wa-gap-3xs">
+    <span class="wa-heading-xl">{{ d[tail] | sig }} {{ d.unit }}</span>
+    <span class="wa-caption-m">{{ tail }} of {{ d.n | thousands }} {{ samples }}, every subscriber and track.</span>
+  </div>
+{% echart '150px', 'card' %}
+{
+  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+  xAxis: {
+    type: 'category',
+    axisLabel: { formatter: (v) => v.split('–')[0] },
+    data: {{ d.bins | binLabels | json }},
+  },
+  yAxis: { type: 'value', axisLabel: { show: false } },
+  series: [
+    { name: '{{ samples }}', type: 'bar', barCategoryGap: '8%', data: {{ d.bins | map: 'count' | json }} },
+  ],
+}
+{% endechart %}
+  <dl class="quantiles">
+{%- assign qs = shown | split: ',' %}
+{%- for q in qs %}
+    <div><dt>{{ q }}</dt><dd>{{ d[q] | sig }} {{ d.unit }}</dd></div>
+{%- endfor %}
+  </dl>
+{%- else %}
+  <p class="wa-body-s">No samples in this capture.</p>
+{%- endif %}
+</section>
