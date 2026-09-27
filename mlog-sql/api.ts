@@ -15,7 +15,7 @@
 import schemaSql from "./schema.sql" with { type: "text" };
 import loadSql from "./load.sql" with { type: "text" };
 import {
-    CaptureError, QUERIES, col, onEngine, recordChunks, sqlString, validateRows,
+    CaptureError, QUERIES, col, onEngine, pickDistribution, recordChunks, sqlString, validateRows,
     type Columns, type QuerySpec,
 } from "./api-internal";
 import type { Capture, CaptureOptions, Conn, Engine, TraceSource } from "./mlog-sql.d.ts";
@@ -57,7 +57,24 @@ export async function openCapture(
     const run = <C extends Columns>(name: string, spec: QuerySpec<C>) =>
         onEngine(async () => validateRows(name, spec, await conn.query(spec.sql)));
 
+    // Every distribution comes from one pass over the samples, so the first
+    // call runs both queries and the rest reuse the rows: the capture does not
+    // change after loading. A failed pass is forgotten, so the next call retries.
+    let distributions: ReturnType<typeof runDistributions> | undefined;
+    const runDistributions = () => Promise.all([
+        run("distributionSummary", QUERIES.distributionSummary),
+        run("distributionBin", QUERIES.distributionBin),
+    ]);
+
     return {
+        distribution: async (measure, track) => {
+            distributions ??= runDistributions().catch((e: unknown) => {
+                distributions = undefined;
+                throw e;
+            });
+            const [summary, bins] = await distributions;
+            return pickDistribution(summary, bins, measure, track);
+        },
         legSummary: () => run("legSummary", QUERIES.legSummary),
         trust: () => run("trust", QUERIES.trust),
         jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),

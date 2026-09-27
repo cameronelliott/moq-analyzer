@@ -147,8 +147,60 @@ export interface ObjectBitrateSeriesRow {
     readonly kbit_s: number;
 }
 
+// --- distributions ----------------------------------------------------------
+// One measure's samples, pooled over every subscriber, so the size stays fixed
+// however many subscribers the capture has. Not a view row: one call gives the
+// quantiles and the bins together.
+
+/**
+ * What one sample is:
+ * - `end to end`: one object reaching one subscriber, from the publisher
+ *   creating it to the subscriber parsing it. Held objects are left out.
+ * - `relay dwell`: one object sent on to one subscriber, from the relay parsing
+ *   it to the relay creating it again. Held objects are left out.
+ * - `interarrival`: the gap between one object arriving at a subscriber and the
+ *   one before it on the same track. It includes the publisher's pacing.
+ * - `bitrate`: one second of payload that one subscriber received. The first
+ *   and last second of each log are partial and left out.
+ */
+export type Measure = "end to end" | "relay dwell" | "interarrival" | "bitrate";
+
+/** `ms` for every measure but `bitrate`, which is `kbit/s`. */
+export type Unit = "ms" | "kbit/s";
+
+export interface Track {
+    readonly namespace: string;
+    readonly name: string;
+}
+
+/** Samples from `lo` up to but not including `hi`, except the last bin, which includes `hi`. */
+export interface Bin {
+    readonly lo: number;
+    readonly hi: number;
+    readonly count: number;
+}
+
+export interface Distribution {
+    readonly measure: Measure;
+    readonly unit: Unit;
+    /** Samples. The bin counts add up to it. */
+    readonly n: number;
+    readonly min: number;
+    readonly p1: number;
+    readonly p5: number;
+    readonly p50: number;
+    readonly p95: number;
+    readonly p99: number;
+    readonly max: number;
+    /** In order and with no gaps, from `min` to `max`. mlog-sql picks the edges. */
+    readonly bins: readonly Bin[];
+}
+
 /** Every method throws CaptureError only. */
 export interface Capture {
+    /** One track, or every track pooled when `track` is left out. null when
+     *  there are no samples. */
+    distribution(measure: Measure, track?: Track): Promise<Distribution | null>;
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
     jitterSummary(): Promise<JitterSummaryRow[]>;

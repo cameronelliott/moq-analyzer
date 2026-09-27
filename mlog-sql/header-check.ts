@@ -28,4 +28,8 @@ export type HeaderMatchesApi = [
     Expect<Equal<H.JitterSeriesRow, Rows<"jitterSeries">>>,
     Expect<Equal<H.ObjectBitrateSummaryRow, Rows<"objectBitrateSummary">>>,
     Expect<Equal<H.ObjectBitrateSeriesRow, Rows<"objectBitrateSeries">>>,
+    // Distribution is assembled in api-internal, not a row, so only the value
+    // sets it shares with the views are checked here.
+    Expect<Equal<H.Measure, Rows<"distributionSummary">["measure"]>>,
+    Expect<Equal<H.Unit, Rows<"distributionSummary">["unit"]>>,
 ];

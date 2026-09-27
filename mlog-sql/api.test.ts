@@ -20,6 +20,7 @@ import {
 } from "@duckdb/duckdb-wasm/blocking";
 import {
     openCapture, CaptureError,
+    type Distribution, type Measure,
     type Engine, type TraceSource, type LegSummaryRow, type JitterSummaryRow,
     type JitterSeriesRow, type ObjectBitrateSeriesRow, type ObjectBitrateSummaryRow,
 } from "./api";
@@ -185,7 +186,22 @@ const EXPECTED_BITRATE_SUMMARY = BITRATE_ENDS.flatMap((e) => SCOPES.map((s): Obj
     mean_kbit_s: null, p5_kbit_s: null, median_kbit_s: null, p95_kbit_s: null, max_kbit_s: null,
 })));
 
-const DUPLICATE_AUDIT = readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
+// Every sample of a measure is the same value, so every quantile is that value
+// and there is one bin. Bitrate has no interior second, so no samples.
+const TRACK = { namespace: "/bbb", name: "1.m4s" };
+const flat = (measure: Measure, n: number, v: number): Distribution => ({
+    measure, unit: "ms", n,
+    min: v, p1: v, p5: v, p50: v, p95: v, p99: v, max: v,
+    bins: [{ lo: v, hi: v, count: n }],
+});
+const EXPECTED_DISTRIBUTIONS: [Measure, Distribution | null][] = [
+    ["end to end", flat("end to end", 3, 90)],
+    ["relay dwell", flat("relay dwell", 3, 1)],
+    ["interarrival", flat("interarrival", 2, 10)],
+    ["bitrate", null],
+];
+
+const DUPLICATE_AUDIT =readFileSync(join(REPO, "test-duplicated-mlog.sql"), "utf8");
 
 // --- the contract -----------------------------------------------------------
 
@@ -238,6 +254,12 @@ describe("openCapture", () => {
             expect(await cap.jitterSeries()).toEqual(EXPECTED_JITTER_SERIES);
             expect(await cap.objectBitrateSeries()).toEqual(EXPECTED_BITRATE_SERIES);
             expect(await cap.objectBitrateSummary()).toEqual(EXPECTED_BITRATE_SUMMARY);
+            // The fixture has one track, so it and every track pooled agree.
+            for (const [measure, expected] of EXPECTED_DISTRIBUTIONS) {
+                expect(await cap.distribution(measure)).toEqual(expected);
+                expect(await cap.distribution(measure, TRACK)).toEqual(expected);
+            }
+            expect(await cap.distribution("end to end", { ...TRACK, name: "none" })).toBeNull();
         } finally {
             reset();
         }
@@ -345,6 +367,34 @@ describe("openCapture", () => {
     test("a query that fails in a Capture method is a CaptureError", async () => {
         const cap = await openCapture(fakeEngine("SELECT sub_cid"), []);
         await engineFailure(cap.legSummary());
+    });
+});
+
+// --- bins -------------------------------------------------------------------
+
+describe("distribution_bin", () => {
+    // 0..100 and one outlier at 1000. p99 is 99.99, so the width is 5 (99.99 /
+    // 20 rounded up to 1, 2 or 5 times a power of ten): 20 bins of five, and
+    // one last bin from 100 to max holding 100 and the outlier.
+    test("round widths up to p99, then one bin to max", async () => {
+        const { engine, reset } = await nodeEngine();
+        try {
+            const conn = await engine.connect();
+            await conn.query(readFileSync(join(REPO, "schema.sql"), "utf8"));
+            await conn.query(`CREATE OR REPLACE VIEW distribution_sample AS
+                SELECT 'relay dwell' AS measure, 'ms' AS unit, 'all' AS scope,
+                       NULL::VARCHAR AS track_namespace, NULL::VARCHAR AS track_name,
+                       v::DOUBLE AS value
+                FROM (SELECT unnest(range(101)) AS v UNION ALL SELECT 1000)`);
+            const bins = validateRows("distributionBin", QUERIES.distributionBin,
+                await conn.query(QUERIES.distributionBin.sql));
+            expect(bins.map((b) => [b.lo, b.hi, b.count])).toEqual([
+                ...Array.from({ length: 20 }, (_, i) => [i * 5, i * 5 + 5, 5]),
+                [100, 1000, 2],
+            ]);
+        } finally {
+            reset();
+        }
     });
 });
 
@@ -506,9 +556,36 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
                 expect(sent!.bytes).toBeGreaterThanOrEqual(got!.bytes);
             }
 
+            // Distributions, every track pooled. Bins run from min to max with
+            // no gaps and hold every sample. End to end's median sits near the
+            // 131.76 ms the `leg` view records; dwell's is under a millisecond.
+            const t1 = performance.now();
+            const dist = new Map<Measure, Distribution>();
+            for (const m of ["end to end", "relay dwell", "interarrival", "bitrate"] as const) {
+                const d = await cap.distribution(m);
+                expect(d).not.toBeNull();
+                if (d === null) return;
+                dist.set(m, d);
+                const q = [d.min, d.p1, d.p5, d.p50, d.p95, d.p99, d.max];
+                expect(q).toEqual([...q].sort((a, b) => a - b));
+                expect(d.bins.reduce((n, b) => n + b.count, 0)).toBe(d.n);
+                expect(d.bins[0]?.lo).toBe(d.min);
+                expect(d.bins.at(-1)?.hi).toBe(d.max);
+                for (let i = 1; i < d.bins.length; i++) expect(d.bins[i]!.lo).toBe(d.bins[i - 1]!.hi);
+                expect(d.bins.length).toBeLessThanOrEqual(22);
+            }
+            const distMs = performance.now() - t1;
+            expect(dist.get("end to end")!.p50).toBeGreaterThan(120);
+            expect(dist.get("end to end")!.p50).toBeLessThan(145);
+            expect(dist.get("relay dwell")!.p50).toBeLessThan(1);
+            expect(dist.get("bitrate")!.p50).toBeGreaterThan(250);
+            expect(dist.get("bitrate")!.p50).toBeLessThan(450);
+
             const audit = await (await engine.connect()).query(DUPLICATE_AUDIT);
             expect(audit).toEqual([]);
 
+            console.log(`real-6pop: distributions in ${(distMs / 1000).toFixed(1)} s;`
+                + ` bins ${[...dist.values()].map((d) => d.bins.length).join(", ")}`);
             console.log(`real-6pop: loaded in ${(loadMs / 1000).toFixed(1)} s;`
                 + ` leg 1 medians ${leg1.map((m) => m.toFixed(2)).join(", ")} ms`);
         } finally {

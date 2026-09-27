@@ -2,7 +2,7 @@
 // whole-record chunks, and checking query rows against a column spec. Private
 // to mlog-sql -- html4 imports api.ts only, which re-exports what it needs.
 
-import type { CaptureFailure } from "./mlog-sql.d.ts";
+import type { CaptureFailure, Distribution, Measure, Track } from "./mlog-sql.d.ts";
 
 // --- errors -----------------------------------------------------------------
 
@@ -198,6 +198,8 @@ const LEG_NOS = [1, 2, 3] as const;
 const LEGS = ["pub -> relay", "relay dwell", "relay -> sub"] as const;
 const DIRECTIONS = ["created", "parsed"] as const;
 const SCOPES = ["all", "track"] as const;
+const MEASURES = ["end to end", "relay dwell", "interarrival", "bitrate"] as const;
+const UNITS = ["ms", "kbit/s"] as const;
 
 /** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
  *  keep BIGINT out of the rows. api.test.ts DESCRIBEs each one against this. */
@@ -352,7 +354,88 @@ export const QUERIES = {
             negative_hops: col("INTEGER", false),
         },
     },
+    distributionSummary: {
+        sql: `SELECT measure,
+                     unit,
+                     scope,
+                     track_namespace,
+                     track_name,
+                     n::INTEGER      AS n,
+                     min::DOUBLE     AS min,
+                     p1::DOUBLE      AS p1,
+                     p5::DOUBLE      AS p5,
+                     p50::DOUBLE     AS p50,
+                     p95::DOUBLE     AS p95,
+                     p99::DOUBLE     AS p99,
+                     max::DOUBLE     AS max
+              FROM distribution_summary
+              ORDER BY measure, scope, track_namespace, track_name`,
+        columns: {
+            measure: col("VARCHAR", false, MEASURES),
+            unit: col("VARCHAR", false, UNITS),
+            scope: col("VARCHAR", false, SCOPES),
+            track_namespace: col("VARCHAR", true),   // NULL on `all` rows
+            track_name: col("VARCHAR", true),
+            n: col("INTEGER", false),
+            min: col("DOUBLE", false),
+            p1: col("DOUBLE", false),
+            p5: col("DOUBLE", false),
+            p50: col("DOUBLE", false),
+            p95: col("DOUBLE", false),
+            p99: col("DOUBLE", false),
+            max: col("DOUBLE", false),
+        },
+    },
+    distributionBin: {
+        sql: `SELECT measure,
+                     scope,
+                     track_namespace,
+                     track_name,
+                     bin::INTEGER    AS bin,
+                     lo::DOUBLE      AS lo,
+                     hi::DOUBLE      AS hi,
+                     count::INTEGER  AS count
+              FROM distribution_bin
+              ORDER BY measure, scope, track_namespace, track_name, bin`,
+        columns: {
+            measure: col("VARCHAR", false, MEASURES),
+            scope: col("VARCHAR", false, SCOPES),
+            track_namespace: col("VARCHAR", true),
+            track_name: col("VARCHAR", true),
+            bin: col("INTEGER", false),
+            lo: col("DOUBLE", false),
+            hi: col("DOUBLE", false),
+            count: col("INTEGER", false),
+        },
+    },
 } as const satisfies Record<string, QuerySpec<Columns>>;
+
+// --- distributions ----------------------------------------------------------
+
+type SummaryRow = Row<(typeof QUERIES)["distributionSummary"]["columns"]>;
+type BinRow = Row<(typeof QUERIES)["distributionBin"]["columns"]>;
+
+/** One distribution out of the rows for all of them. A filter, not a join:
+ *  both views are keyed by measure, scope and track. */
+export function pickDistribution(
+    summary: readonly SummaryRow[],
+    bins: readonly BinRow[],
+    measure: Measure,
+    track?: Track,
+): Distribution | null {
+    const mine = (r: SummaryRow | BinRow) =>
+        r.measure === measure
+        && (track === undefined
+            ? r.scope === "all"
+            : r.scope === "track" && r.track_namespace === track.namespace && r.track_name === track.name);
+    const s = summary.find(mine);
+    if (s === undefined) return null;
+    return {
+        measure, unit: s.unit, n: s.n,
+        min: s.min, p1: s.p1, p5: s.p5, p50: s.p50, p95: s.p95, p99: s.p99, max: s.max,
+        bins: bins.filter(mine).map((b) => ({ lo: b.lo, hi: b.hi, count: b.count })),
+    };
+}
 
 // --- SQL text ---------------------------------------------------------------
 

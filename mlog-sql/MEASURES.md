@@ -15,6 +15,22 @@ view, and then the Capture function that reads it.
 Every series counts `t_s` from `capture_start`, so all series share one time
 axis.
 
+## Distributions
+
+`distribution(measure, track?)` gives the quantiles and a histogram of one
+measure. The views are `distribution_sample`, `distribution_summary`, and
+`distribution_bin`. The samples of all subscribers are put together, so the
+result has the same size for 4 subscribers or 5,000. The views are the reason:
+a chart with one bar for each subscriber does not scale.
+
+The measures are end to end, relay dwell, interarrival, and bitrate. A bitrate
+sample is one second that one subscriber received. When you do not give a
+track, bitrate uses the `all` second, not the track seconds together. Video
+seconds and audio seconds together do not mean anything.
+
+The quantiles include p1 and p5, because a low bitrate is the problem. For
+latency, a high value is the problem.
+
 - Latency: The view gives one value for each leg. The means of the legs add up
   to the end-to-end mean. The medians do not. The view does not include held
   objects. Latency is correct only when the clocks agree.

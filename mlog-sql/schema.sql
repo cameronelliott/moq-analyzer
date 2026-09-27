@@ -733,6 +733,141 @@ SELECT cid, vantage_point, direction, scope, track_namespace, track_name,
 FROM s
 GROUP BY cid, vantage_point, direction, scope, track_namespace, track_name;
 
+-- Distribution samples: one row per sample of a measure, pooled over every
+-- subscriber, so a chart of them stays one series however many subscribers
+-- there are. value is in the measure's unit.
+--
+-- `track` rows belong to one track; `all` rows pool every track. For the
+-- latency measures an `all` row is the same sample again. For bitrate it is
+-- the `all` second from object_bitrate_series: pooling video seconds with
+-- audio seconds would mean nothing, and their sum does.
+--
+-- end to end:   the three legs of one object to one subscriber, summed. An
+--               object with a leg missing drops out, as held objects already
+--               have in `leg`.
+-- relay dwell:  leg 2 of `leg`.
+-- interarrival: the gap at a subscriber (vantage `client`, direction
+--               `parsed`). It includes the publisher's pacing; see
+--               `interarrival`.
+-- bitrate:      one second a subscriber received, without the first and the
+--               last second of its log, as in object_bitrate_summary.
+--
+-- A sample whose track never resolved is left out of the latency measures;
+-- `leg` drops those already.
+CREATE OR REPLACE VIEW distribution_sample AS
+WITH latency AS (
+    SELECT 'end to end' AS measure, track_namespace, track_name,
+           sum(us) / 1000 AS value
+    FROM leg
+    GROUP BY sub_cid, track_namespace, track_name, group_id, subgroup_id, object_id
+    HAVING count(*) = 3
+    UNION ALL
+    SELECT 'relay dwell', track_namespace, track_name, us / 1000
+    FROM leg
+    WHERE leg_no = 2
+    UNION ALL
+    SELECT 'interarrival', track_namespace, track_name, us / 1000
+    FROM interarrival
+    WHERE vantage_point = 'client' AND us IS NOT NULL AND track_name IS NOT NULL
+),
+received AS (
+    SELECT *,
+           min(sec) OVER w AS first_sec,
+           max(sec) OVER w AS last_sec
+    FROM object_bitrate_series
+    WHERE vantage_point = 'client' AND direction = 'parsed'
+    WINDOW w AS (PARTITION BY cid, vantage_point, direction)
+)
+SELECT measure, 'ms' AS unit, 'track' AS scope, track_namespace, track_name, value
+FROM latency
+UNION ALL
+SELECT measure, 'ms', 'all', NULL, NULL, value
+FROM latency
+UNION ALL
+SELECT 'bitrate', 'kbit/s', scope, track_namespace, track_name, kbit_s
+FROM received
+WHERE sec > first_sec AND sec < last_sec
+  AND (scope = 'all' OR track_name IS NOT NULL);
+
+-- Distribution summary: one row per measure and track, and one per measure
+-- with every track pooled.
+CREATE OR REPLACE VIEW distribution_summary AS
+SELECT measure, unit, scope, track_namespace, track_name,
+       count(*)                     AS n,
+       min(value)                   AS min,
+       quantile_cont(value, 0.01)   AS p1,
+       quantile_cont(value, 0.05)   AS p5,
+       quantile_cont(value, 0.5)    AS p50,
+       quantile_cont(value, 0.95)   AS p95,
+       quantile_cont(value, 0.99)   AS p99,
+       max(value)                   AS max
+FROM distribution_sample
+GROUP BY ALL;
+
+-- Distribution bins: a histogram of each row above, from min to max with no
+-- gaps. A bin with no samples is a row with count 0.
+--
+-- The width is a round number, 1, 2 or 5 times a power of ten, that cuts min
+-- to p99 into 20 bins or fewer. Every sample past p99's bin goes in one last
+-- bin up to max, so one outlier cannot squash the rest into a single bar.
+-- Round edges read well on an axis. The first bin starts at min and the last
+-- ends at max, so those two edges are not round. When every sample is the same
+-- value there is one bin.
+CREATE OR REPLACE VIEW distribution_bin AS
+WITH sized AS (
+    SELECT *,
+           -- min to p99, or min to max when those two are equal
+           coalesce(nullif(p99 - min, 0), max - min) / 20 AS raw
+    FROM distribution_summary
+),
+rounded AS (
+    SELECT *,
+           CASE WHEN raw > 0 THEN
+               pow(10, floor(log10(raw))) *
+               CASE WHEN raw / pow(10, floor(log10(raw))) <= 1 THEN 1
+                    WHEN raw / pow(10, floor(log10(raw))) <= 2 THEN 2
+                    WHEN raw / pow(10, floor(log10(raw))) <= 5 THEN 5
+                    ELSE 10 END
+           END AS width
+    FROM sized
+),
+-- Edges count in widths from zero. The last bin takes p99's edge onward, or
+-- the bin max falls in, whichever is lower. A max on an edge joins the bin
+-- below it rather than making a bin of its own.
+edged AS (
+    SELECT measure, scope, track_namespace, track_name, min, max, width,
+           coalesce(floor(min / width), 0)                                  AS first_edge,
+           coalesce(least(ceil(p99 / width), ceil(max / width) - 1), 0)    AS last_edge
+    FROM rounded
+),
+counted AS (
+    SELECT e.measure, e.scope, e.track_namespace, e.track_name,
+           coalesce(least(floor(s.value / e.width), e.last_edge) - e.first_edge, 0) AS bin,
+           count(*) AS count
+    FROM distribution_sample s
+    JOIN edged e
+      ON s.measure = e.measure AND s.scope = e.scope
+     AND s.track_namespace IS NOT DISTINCT FROM e.track_namespace
+     AND s.track_name IS NOT DISTINCT FROM e.track_name
+    GROUP BY ALL
+),
+bins AS (
+    SELECT *, unnest(range((last_edge - first_edge + 1)::BIGINT)) AS bin
+    FROM edged
+)
+SELECT b.measure, b.scope, b.track_namespace, b.track_name, b.bin,
+       CASE WHEN b.bin = 0 THEN b.min
+            ELSE (b.first_edge + b.bin) * b.width END                 AS lo,
+       CASE WHEN b.first_edge + b.bin = b.last_edge THEN b.max
+            ELSE (b.first_edge + b.bin + 1) * b.width END             AS hi,
+       coalesce(c.count, 0)                                           AS count
+FROM bins b
+LEFT JOIN counted c
+  ON c.measure = b.measure AND c.scope = b.scope
+ AND c.track_namespace IS NOT DISTINCT FROM b.track_namespace
+ AND c.track_name IS NOT DISTINCT FROM b.track_name
+ AND c.bin = b.bin;
+
 -- Every event in one shape, the way my_table looked, but with real columns
 -- instead of a sparse struct. For reading a trace in order -- add
 -- ORDER BY time_us -- rather than for aggregation; prefer `object` for that.
