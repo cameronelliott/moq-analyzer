@@ -70,6 +70,7 @@ const CARDS: readonly CardSpec[] = [
   {
     measure: 'interarrival',
     title: 'Interarrival',
+    href: '#interarrival',
     about: 'Gap between an object arriving at a subscriber and the one before it on the same track. '
       + "It includes the publisher's pacing. rtcstats calls this latency; webrtc-internals calls it jitter.",
     tail: 'p99',

@@ -7,6 +7,7 @@ import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
 import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
 import { connections } from './lib/connections';
+import { interarrival, receivedTracks, type TrackDistribution } from './lib/interarrival';
 import { latency } from './lib/latency';
 import { throughput } from './lib/throughput';
 import { tracesFromFiles } from './lib/trace-files';
@@ -81,13 +82,14 @@ const captureNav = element('capture-nav', HTMLDivElement);
 const overviewView = element('overview', HTMLElement);
 const connectionsView = element('connections', HTMLElement);
 const throughputView = element('throughput', HTMLElement);
+const interarrivalView = element('interarrival', HTMLElement);
 const latencyView = element('latency', HTMLElement);
 
 // --- views ------------------------------------------------------------------
 // One HTML page; the URL hash picks which <section data-view> shows. The
 // capture views need a loaded capture, so without one every hash shows load.
 
-const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'connections']);
+const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'interarrival', 'connections']);
 let loaded = false;
 
 function route(): void {
@@ -158,6 +160,7 @@ async function load(files: readonly File[]): Promise<void> {
     latencyView.innerHTML = latencyPage.html.text;
     mountCharts(latencyView, latencyPage.charts);
     throughputView.innerHTML = html`<wa-spinner label="Computing throughput"></wa-spinner>`.text;
+    interarrivalView.innerHTML = html`<wa-spinner label="Computing interarrival"></wa-spinner>`.text;
     loaded = true;
     captureNav.hidden = false;
     show('overview');
@@ -172,9 +175,19 @@ async function load(files: readonly File[]): Promise<void> {
     }
 
     statusLine.textContent = 'Computing throughput…';
-    const bitrate = throughput(await capture.objectBitrateSeries(), await capture.objectBitrateSummary());
+    const bitrateSummary = await capture.objectBitrateSummary();
+    const bitrate = throughput(await capture.objectBitrateSeries(), bitrateSummary);
     throughputView.innerHTML = bitrate.html.text;
     mountCharts(throughputView, bitrate.charts);
+
+    statusLine.textContent = 'Computing interarrival…';
+    const perTrack: TrackDistribution[] = [];
+    for (const track of receivedTracks(bitrateSummary)) {
+      perTrack.push({ track, d: await capture.distribution('interarrival', track) });
+    }
+    const gaps = interarrival(perTrack);
+    interarrivalView.innerHTML = gaps.html.text;
+    mountCharts(interarrivalView, gaps.charts);
 
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
