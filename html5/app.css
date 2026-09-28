@@ -71,6 +71,8 @@ main { padding: var(--wa-space-l); }
   }
   .card wa-icon { color: var(--wa-color-text-quiet); }
   .card app-echart { margin-block: 0; }
+  /* About the height of a filled card's body, so the page does not jump. */
+  .card .pending { display: grid; place-items: center; min-block-size: 16rem; font-size: 2rem; }
   /* The title is the link to its view: heading ink, a quiet underline that
      goes loud on hover. */
   .card h2 a {

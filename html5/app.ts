@@ -1,11 +1,11 @@
 // The analyzer's bundle entry. index.html loads it with one script tag.
 
-import { CaptureError, openCapture, type Distribution, type Measure } from 'mlog-sql';
+import { CaptureError, openCapture } from 'mlog-sql';
 import { mountCharts } from './lib/chart-element';
 import { installSchemeSwitch } from './lib/dark-light-scheme';
 import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
 import { html } from './lib/html';
-import { overview } from './lib/overview';
+import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
 import { legSummaryTable, trustTable } from './lib/tables';
 import { tracesFromFiles } from './lib/trace-files';
 
@@ -15,6 +15,7 @@ import { tracesFromFiles } from './lib/trace-files';
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import { registerIconLibrary } from '@awesome.me/webawesome/dist/components/icon/library.js';
 
 // wa-page draws its mobile menu button with <wa-icon name="bars">, and the
@@ -145,22 +146,24 @@ async function load(files: readonly File[]): Promise<void> {
     // One connection, so one query at a time.
     const trust = await capture.trust();
     const legs = await capture.legSummary();
-    const dists = {
-      'end to end': await capture.distribution('end to end'),
-      'relay dwell': await capture.distribution('relay dwell'),
-      interarrival: await capture.distribution('interarrival'),
-      bitrate: await capture.distribution('bitrate'),
-    } satisfies Record<Measure, Distribution | null>;
 
-    const view = overview({ traces: traces.length, trust, distributions: dists });
-    overviewView.innerHTML = view.html.text;
-    mountCharts(overviewView, view.charts);
+    // Show the Overview now, with a spinner in each distribution card, and
+    // fill the cards in as their queries return.
+    overviewView.innerHTML = overview({ traces: traces.length, trust, distributions: {} }).html.text;
     trustView.innerHTML = trustTable(trust).text;
     legsView.innerHTML = legSummaryTable(legs).text;
-
     loaded = true;
     captureNav.hidden = false;
     show('overview');
+    statusLine.textContent = 'Computing distributions…';
+
+    for (const measure of OVERVIEW_MEASURES) {
+      const card = distributionCard(measure, await capture.distribution(measure));
+      const slot = overviewView.querySelector(`[data-card="${cardId(measure)}"]`);
+      if (!slot) continue;
+      slot.outerHTML = card.html.text;
+      mountCharts(overviewView, card.charts);
+    }
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
   } catch (e) {

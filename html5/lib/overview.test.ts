@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { Distribution, Measure, TrustRow } from 'mlog-sql';
-import { histogramOption, overview, type OverviewData } from './overview';
+import { distributionCard, histogramOption, overview, type OverviewData } from './overview';
 
 const dist = (measure: Measure, over: Partial<Distribution> = {}): Distribution => ({
   measure,
@@ -63,6 +63,22 @@ test('clocks: the no-clock-error sentence only when there are no negative hops',
   const bad = overview(data({ trust: [trust({ negative_hops: 3 })] })).html.text;
   expect(bad).toContain('3</span>');
   expect(bad).not.toContain('rules out clock error');
+});
+
+test('a distribution not yet computed shows a spinner, no chart, and a slot to fill', () => {
+  const { html, charts } = overview(data({ distributions: {} }));
+  expect(html.text.match(/<wa-spinner/g)?.length).toBe(4);
+  expect(html.text).not.toContain('<app-echart');
+  expect(charts).toEqual({});
+  expect(html.text).toContain('data-card="relay-dwell"');
+});
+
+test('a filled card has the same slot, and its chart', () => {
+  const card = distributionCard('relay dwell', dist('relay dwell'));
+  expect(card.html.text).toContain('data-card="relay-dwell"');
+  expect(card.html.text).not.toContain('<wa-spinner');
+  expect(Object.keys(card.charts)).toEqual(['relay-dwell']);
+  expect(distributionCard('relay dwell', null).charts).toEqual({});
 });
 
 test('histogram: one bar per bin, labels from the bin edges', () => {

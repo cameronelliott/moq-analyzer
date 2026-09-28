@@ -5,7 +5,7 @@
     "": {
       "name": "html5",
       "dependencies": {
-        "@awesome.me/webawesome": "3.13.0",
+        "@awesome.me/webawesome": "3.14.0",
         "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
         "echarts": "6.1.0",
         "lit": "^3.3.3",
@@ -18,7 +18,7 @@
     },
   },
   "packages": {
-    "@awesome.me/webawesome": ["@awesome.me/webawesome@3.13.0", "", { "dependencies": { "@ctrl/tinycolor": "4.1.0", "@floating-ui/dom": "^1.6.13", "@konnorr/qr-creator": "^1.0.1", "@lit-labs/ssr": "^4.1.0", "@lit-labs/ssr-client": "^1.1.8", "@lit/context": "^1.1.6", "@lit/react": "^1.0.8", "@shoelace-style/animations": "^1.2.0", "@shoelace-style/localize": "^3.2.3", "composed-offset-position": "^0.0.6", "lit": "^3.2.1", "marked": "^11.2.0", "nanoid": "^5.1.5" } }, "sha512-egDzZAHCMj31xaYW2AFhwxl5XMj4lAFGxh9Q0WMQjRHdC6sy45JofA8ojGl28LuztDhrjfmz6tP5KG4anpjT8w=="],
+    "@awesome.me/webawesome": ["@awesome.me/webawesome@3.14.0", "", { "dependencies": { "@ctrl/tinycolor": "4.1.0", "@floating-ui/dom": "^1.6.13", "@konnorr/qr-creator": "^1.0.1", "@lit-labs/ssr": "^4.1.0", "@lit-labs/ssr-client": "^1.1.8", "@lit/context": "^1.1.6", "@lit/react": "^1.0.8", "@shoelace-style/animations": "^1.2.0", "@shoelace-style/localize": "^3.2.3", "composed-offset-position": "^0.0.6", "lit": "^3.2.1", "marked": "^11.2.0", "nanoid": "^5.1.5" } }, "sha512-m5rTGLK/iOvaVFOkYxRjiBOp8lwrBap5tv+zz1gsqLgAxlfwdvElB7BVGjs+Lf9gDps7bWRPTkG0FwZk40mk2A=="],
 
     "@ctrl/tinycolor": ["@ctrl/tinycolor@4.1.0", "", {}, "sha512-WyOx8cJQ+FQus4Mm4uPIZA64gbk3Wxh0so5Lcii0aJifqwoVOlfFtorjLE0Hen4OYyHZMXDWqMmaQemBhgxFRQ=="],
 

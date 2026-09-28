@@ -14,7 +14,9 @@ import { html, type SafeHtml } from './html';
 export interface OverviewData {
   readonly traces: number;
   readonly trust: readonly TrustRow[];
-  readonly distributions: Readonly<Record<Measure, Distribution | null>>;
+  /** A measure left out is still being computed: its card shows a spinner
+   *  until distributionCard() replaces it. null means no samples. */
+  readonly distributions: Readonly<Partial<Record<Measure, Distribution | null>>>;
 }
 
 export interface View {
@@ -85,7 +87,8 @@ const DELIVERY_ABOUT = 'An object is lost only if both ends were still logging w
 const CLOCKS_ABOUT = 'A negative hop is an object logged as arriving before it was sent. '
   + 'Only clock error makes one.';
 
-const chartId = (measure: Measure) => measure.replaceAll(' ', '-');
+/** The id a measure's card and chart share. */
+export const cardId = (measure: Measure): string => measure.replaceAll(' ', '-');
 
 /** A distribution's bins as a card histogram. */
 export function histogramOption(d: Distribution, samples: string): EChartsOption {
@@ -109,9 +112,11 @@ function cardHead(id: string, title: string, about: string, href?: string): Safe
   </div>`;
 }
 
-function distributionCard(spec: CardSpec, d: Distribution | null): SafeHtml {
-  const id = chartId(spec.measure);
-  const body = d
+function card(spec: CardSpec, d: Distribution | null | undefined): SafeHtml {
+  const id = cardId(spec.measure);
+  const body = d === undefined
+    ? html`<div class="pending"><wa-spinner label="Computing ${spec.title.toLowerCase()}"></wa-spinner></div>`
+    : d
     ? html`<div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">${quantity(d[spec.tail], d.unit)}</span>
       <span class="wa-caption-m">${spec.tail} of ${count(d.n)} ${spec.samples}, every subscriber and track.</span>
@@ -120,7 +125,25 @@ function distributionCard(spec: CardSpec, d: Distribution | null): SafeHtml {
     <dl class="quantiles">${spec.shown.map((q) =>
       html`<div><dt>${q}</dt><dd>${quantity(d[q], d.unit)}</dd></div>`)}</dl>`
     : html`<p class="wa-body-s">No samples in this capture.</p>`;
-  return html`<section class="card wa-stack">${cardHead(id, spec.title, spec.about, spec.href)}${body}</section>`;
+  return html`<section class="card wa-stack" data-card="${id}">${cardHead(id, spec.title, spec.about, spec.href)}${body}</section>`;
+}
+
+/** The measures with a card, in page order. */
+export const OVERVIEW_MEASURES: readonly Measure[] = CARDS.map((s) => s.measure);
+
+const specFor = (measure: Measure): CardSpec => {
+  const spec = CARDS.find((s) => s.measure === measure);
+  if (!spec) throw new Error(`no overview card for ${measure}`);
+  return spec;
+};
+
+/** One distribution card, to replace the `[data-card]` of the same id. */
+export function distributionCard(measure: Measure, d: Distribution | null): View {
+  const spec = specFor(measure);
+  return {
+    html: card(spec, d),
+    charts: d ? { [cardId(measure)]: histogramOption(d, spec.samples) } : {},
+  };
 }
 
 const sum = (rows: readonly TrustRow[], key: 'sent' | 'joined' | 'lost' | 'outside_window' | 'negative_hops') =>
@@ -174,7 +197,7 @@ export function overview(data: OverviewData): View {
   const charts: Record<string, EChartsOption> = {};
   for (const spec of CARDS) {
     const d = data.distributions[spec.measure];
-    if (d) charts[chartId(spec.measure)] = histogramOption(d, spec.samples);
+    if (d) charts[cardId(spec.measure)] = histogramOption(d, spec.samples);
   }
   return {
     html: html`<div class="dashboard wa-stack wa-gap-xl">
@@ -185,9 +208,9 @@ export function overview(data: OverviewData): View {
     ${stat('Hops joined', count(sum(data.trust, 'joined')))}
   </dl>
   <div class="tray wa-grid wa-gap-xs">
-    ${CARDS.slice(0, 2).map((spec) => distributionCard(spec, data.distributions[spec.measure]))}
+    ${CARDS.slice(0, 2).map((spec) => card(spec, data.distributions[spec.measure]))}
     ${deliveryCard(data.trust)}
-    ${CARDS.slice(2).map((spec) => distributionCard(spec, data.distributions[spec.measure]))}
+    ${CARDS.slice(2).map((spec) => card(spec, data.distributions[spec.measure]))}
     ${clocksCard(data.trust)}
   </div>
 </div>`,
