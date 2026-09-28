@@ -20,6 +20,9 @@ export const sig = (n: number): string => SIG.format(n);
 /** A headline number and its unit: 25 ms. */
 export const quantity = (n: number, unit: string): string => `${sig(n)} ${unit}`;
 
+/** A connection by the start of its cid. A manifest will give names later. */
+export const shortCid = (cid: string): string => cid.slice(0, 8);
+
 /** A part of a whole: 98.5%. A whole of 0 prints 0.0%. */
 export const percent = (part: number, whole: number): string =>
   PERCENT.format(whole === 0 ? 0 : part / whole);

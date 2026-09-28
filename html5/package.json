@@ -17,6 +17,7 @@
     "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
     "echarts": "6.1.0",
     "lit": "^3.3.3",
+    "marked": "^18.0.14",
     "mlog-sql": "file:../mlog-sql"
   }
 }

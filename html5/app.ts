@@ -6,7 +6,8 @@ import { installSchemeSwitch } from './lib/dark-light-scheme';
 import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
 import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
-import { legSummaryTable, trustTable } from './lib/tables';
+import { latency } from './lib/latency';
+import { trustTable } from './lib/tables';
 import { tracesFromFiles } from './lib/trace-files';
 
 // Web Awesome's loader finds components by scanning the document at runtime,
@@ -78,7 +79,7 @@ const rejectedList = element('rejected', HTMLUListElement);
 const captureNav = element('capture-nav', HTMLDivElement);
 const overviewView = element('overview', HTMLElement);
 const trustView = element('trust', HTMLDivElement);
-const legsView = element('legs', HTMLDivElement);
+const latencyView = element('latency', HTMLElement);
 
 // --- views ------------------------------------------------------------------
 // One HTML page; the URL hash picks which <section data-view> shows. The
@@ -151,7 +152,9 @@ async function load(files: readonly File[]): Promise<void> {
     // fill the cards in as their queries return.
     overviewView.innerHTML = overview({ traces: traces.length, trust, distributions: {} }).html.text;
     trustView.innerHTML = trustTable(trust).text;
-    legsView.innerHTML = legSummaryTable(legs).text;
+    const latencyPage = latency(legs);
+    latencyView.innerHTML = latencyPage.html.text;
+    mountCharts(latencyView, latencyPage.charts);
     loaded = true;
     captureNav.hidden = false;
     show('overview');

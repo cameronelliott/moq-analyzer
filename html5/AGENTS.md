@@ -17,7 +17,13 @@
 
 - Cameron rewrites all page text later. Keep text easy to find and edit.
 - Put long text and text with much formatting in markdown files, not in TypeScript.
-- Decide how markdown becomes HTML before the first page with long text. Ask Cameron before you add a markdown dependency.
+- A detail page is `pages/<name>.md`. Its view imports it `with { type: 'text' }`, and `marked` makes the HTML (`lib/markdown.ts`).
+- `markdown()` is a pure function, with no DOM and no Bun-only imports. The browser runs it now. A Bun script can use it later to write static pages.
+- Do not use a Bun macro for markdown. `bun build --watch` does not rebuild when a `.md` file that a macro reads changes.
+- In a page, `<div data-block="name"></div>` is a place for a table or other HTML. `fillBlocks()` fills it. A placeholder with no block, or a block with no placeholder, is an error.
+- In a page, `<app-echart data-chart="name"></app-echart>` is a place for a chart. `mountCharts()` gives it its option.
+- Put each placeholder on its own line, with a blank line before and after it.
+- `marked` does not sanitize. Use `markdown()` only for `pages/*.md`. Text from a manifest or an mlog goes through the `html` template.
 
 ## Trace file names
 

@@ -23,6 +23,7 @@ main { padding: var(--wa-space-l); }
 }
 
 .table-scroll { overflow-x: auto; }
+.table-scroll :is(th, td) { white-space: nowrap; }
 .num { text-align: end; font-variant-numeric: tabular-nums; }
 /* Light, dark, auto: three native radios drawn as one segmented control.
    Native rather than wa-radio-group or wa-dropdown, which would add to

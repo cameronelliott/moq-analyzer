@@ -10,6 +10,7 @@ import type { EChartsOption } from 'echarts';
 import type { Distribution, Measure, TrustRow } from 'mlog-sql';
 import { count, percent, quantity, sig } from './format';
 import { html, type SafeHtml } from './html';
+import type { View } from './view';
 
 export interface OverviewData {
   readonly traces: number;
@@ -17,12 +18,6 @@ export interface OverviewData {
   /** A measure left out is still being computed: its card shows a spinner
    *  until distributionCard() replaces it. null means no samples. */
   readonly distributions: Readonly<Partial<Record<Measure, Distribution | null>>>;
-}
-
-export interface View {
-  readonly html: SafeHtml;
-  /** Chart options by the `data-chart` id of the element that shows them. */
-  readonly charts: Readonly<Record<string, EChartsOption>>;
 }
 
 type Quantile = 'min' | 'p1' | 'p5' | 'p50' | 'p95' | 'p99' | 'max';

@@ -4,7 +4,7 @@
 
 const BRAND: unique symbol = Symbol('SafeHtml');
 
-/** Markup that is safe to put in the page. Only `html` makes one. */
+/** Markup that is safe to put in the page. Only `html` and markdown.ts make one. */
 export interface SafeHtml {
   readonly [BRAND]: true;
   readonly text: string;
@@ -28,6 +28,11 @@ function print(value: HtmlValue): string {
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') return escape(value);
   return value.map(print).join('');
+}
+
+/** Markup made from our own markdown files. Only markdown.ts calls this. */
+export function trustedMarkup(text: string): SafeHtml {
+  return { [BRAND]: true, text };
 }
 
 export function html(strings: TemplateStringsArray, ...values: HtmlValue[]): SafeHtml {
