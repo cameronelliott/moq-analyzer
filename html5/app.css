@@ -22,6 +22,14 @@ main { padding: var(--wa-space-l); }
   background: var(--wa-color-brand-fill-quiet);
 }
 
+/* wa-prose caps its element at 65ch. Keep that cap on text, and let charts
+   and tables use the whole column. marked wraps a lone <app-echart> in a <p>,
+   so a paragraph that holds a chart is not text. */
+article.wa-prose { --wa-prose-line-length: none; }
+article.wa-prose > :is(h1, h2, h3, h4, ul, ol, blockquote, p:not(:has(> app-echart))) {
+  max-inline-size: 65ch;
+}
+
 .table-scroll { overflow-x: auto; }
 /* Cells stay on one line; headers may wrap, so a wide table fits the prose column. */
 .table-scroll td { white-space: nowrap; }

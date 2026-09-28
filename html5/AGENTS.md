@@ -23,6 +23,7 @@
 - In a page, `<div data-block="name"></div>` is a place for a table or other HTML. `fillBlocks()` fills it. A placeholder with no block, or a block with no placeholder, is an error.
 - In a page, `<app-echart data-chart="name"></app-echart>` is a place for a chart. `mountCharts()` gives it its option.
 - Put each placeholder on its own line, with a blank line before and after it.
+- A page is an `<article class="wa-prose">`. The 65ch width cap applies to text only (`app.css`). Charts and tables use the full column.
 - `marked` does not sanitize. Use `markdown()` only for `pages/*.md`. Text from a manifest or an mlog goes through the `html` template.
 
 ## Trace file names

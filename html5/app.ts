@@ -8,6 +8,7 @@ import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
 import { connections } from './lib/connections';
 import { interarrival, receivedTracks, type TrackDistribution } from './lib/interarrival';
+import { jitter } from './lib/jitter';
 import { latency } from './lib/latency';
 import { throughput } from './lib/throughput';
 import { tracesFromFiles } from './lib/trace-files';
@@ -83,13 +84,14 @@ const overviewView = element('overview', HTMLElement);
 const connectionsView = element('connections', HTMLElement);
 const throughputView = element('throughput', HTMLElement);
 const interarrivalView = element('interarrival', HTMLElement);
+const jitterView = element('jitter', HTMLElement);
 const latencyView = element('latency', HTMLElement);
 
 // --- views ------------------------------------------------------------------
 // One HTML page; the URL hash picks which <section data-view> shows. The
 // capture views need a loaded capture, so without one every hash shows load.
 
-const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'interarrival', 'connections']);
+const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'interarrival', 'jitter', 'connections']);
 let loaded = false;
 
 function route(): void {
@@ -161,6 +163,7 @@ async function load(files: readonly File[]): Promise<void> {
     mountCharts(latencyView, latencyPage.charts);
     throughputView.innerHTML = html`<wa-spinner label="Computing throughput"></wa-spinner>`.text;
     interarrivalView.innerHTML = html`<wa-spinner label="Computing interarrival"></wa-spinner>`.text;
+    jitterView.innerHTML = html`<wa-spinner label="Computing jitter"></wa-spinner>`.text;
     loaded = true;
     captureNav.hidden = false;
     show('overview');
@@ -188,6 +191,11 @@ async function load(files: readonly File[]): Promise<void> {
     const gaps = interarrival(perTrack);
     interarrivalView.innerHTML = gaps.html.text;
     mountCharts(interarrivalView, gaps.charts);
+
+    statusLine.textContent = 'Computing jitter…';
+    const steady = jitter(await capture.jitterSummary(), await capture.jitterSeries());
+    jitterView.innerHTML = steady.html.text;
+    mountCharts(jitterView, steady.charts);
 
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
