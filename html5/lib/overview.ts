@@ -96,7 +96,9 @@ export function histogramOption(d: Distribution, samples: string): EChartsOption
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     xAxis: {
       type: 'category',
-      axisLabel: { formatter: (v: string) => v.split('–')[0] ?? v },
+      // The card grid starts at left 0, so a centred first label would hang
+      // off the canvas edge and be clipped.
+      axisLabel: { formatter: (v: string) => v.split('–')[0] ?? v, alignMinLabel: 'left' },
       data: d.bins.map((b) => `${sig(b.lo)}–${sig(b.hi)}`),
     },
     yAxis: { type: 'value', axisLabel: { show: false } },

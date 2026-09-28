@@ -86,3 +86,10 @@ test('histogram: one bar per bin, labels from the bin edges', () => {
   expect(option.series).toEqual([expect.objectContaining({ type: 'bar', data: [600, 400] })]);
   expect(option.xAxis).toEqual(expect.objectContaining({ data: ['1–60', '60–120'] }));
 });
+
+test('histogram: the first x label starts at the plot edge, not centred past it', () => {
+  const option = histogramOption(dist('end to end'), 'deliveries');
+  expect(option.xAxis).toEqual(expect.objectContaining({
+    axisLabel: expect.objectContaining({ alignMinLabel: 'left' }),
+  }));
+});
