@@ -60,6 +60,7 @@ const CARDS: readonly CardSpec[] = [
   {
     measure: 'bitrate',
     title: 'Bitrate',
+    href: '#throughput',
     about: 'Payload bits per second at a subscriber: no QUIC or MoQ framing, no retransmissions. '
       + 'One sample is one second at one subscriber. The first and last second of each log are partial and left out.',
     tail: 'p5',

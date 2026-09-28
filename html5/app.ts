@@ -8,6 +8,7 @@ import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
 import { connections } from './lib/connections';
 import { latency } from './lib/latency';
+import { throughput } from './lib/throughput';
 import { tracesFromFiles } from './lib/trace-files';
 
 // Web Awesome's loader finds components by scanning the document at runtime,
@@ -79,13 +80,14 @@ const rejectedList = element('rejected', HTMLUListElement);
 const captureNav = element('capture-nav', HTMLDivElement);
 const overviewView = element('overview', HTMLElement);
 const connectionsView = element('connections', HTMLElement);
+const throughputView = element('throughput', HTMLElement);
 const latencyView = element('latency', HTMLElement);
 
 // --- views ------------------------------------------------------------------
 // One HTML page; the URL hash picks which <section data-view> shows. The
 // capture views need a loaded capture, so without one every hash shows load.
 
-const CAPTURE_VIEWS = new Set(['overview', 'latency', 'connections']);
+const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'connections']);
 let loaded = false;
 
 function route(): void {
@@ -155,6 +157,7 @@ async function load(files: readonly File[]): Promise<void> {
     const latencyPage = latency(legs);
     latencyView.innerHTML = latencyPage.html.text;
     mountCharts(latencyView, latencyPage.charts);
+    throughputView.innerHTML = html`<wa-spinner label="Computing throughput"></wa-spinner>`.text;
     loaded = true;
     captureNav.hidden = false;
     show('overview');
@@ -167,6 +170,12 @@ async function load(files: readonly File[]): Promise<void> {
       slot.outerHTML = card.html.text;
       mountCharts(overviewView, card.charts);
     }
+
+    statusLine.textContent = 'Computing throughput…';
+    const bitrate = throughput(await capture.objectBitrateSeries(), await capture.objectBitrateSummary());
+    throughputView.innerHTML = bitrate.html.text;
+    mountCharts(throughputView, bitrate.charts);
+
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
   } catch (e) {
