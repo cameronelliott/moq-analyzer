@@ -1,0 +1,47 @@
+@import '@awesome.me/webawesome/dist/styles/webawesome.css';
+
+html, body { min-height: 100%; padding: 0; margin: 0; }
+
+.site-name { font-weight: var(--wa-font-weight-bold); text-decoration: none; }
+main { padding: var(--wa-space-l); }
+.quiet { color: var(--wa-color-text-quiet); }
+
+.drop-zone {
+  padding: var(--wa-space-l);
+  border: var(--wa-border-width-m) dashed var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-l);
+}
+.drop-zone.dragging {
+  border-color: var(--wa-color-brand-border-loud);
+  background: var(--wa-color-brand-fill-quiet);
+}
+
+.table-scroll { overflow-x: auto; }
+.num { text-align: end; font-variant-numeric: tabular-nums; }
+/* Light, dark, auto: three native radios drawn as one segmented control.
+   Native rather than wa-radio-group or wa-dropdown, which would add to
+   the bundle for what a fieldset already does. */
+.scheme-switch {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: none;
+  border-radius: var(--wa-border-radius-pill);
+  background: var(--wa-color-neutral-fill-quiet);
+}
+.scheme-switch label {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 1.75rem;
+  border-radius: var(--wa-border-radius-pill);
+  color: var(--wa-color-text-quiet);
+  cursor: pointer;
+}
+.scheme-switch label:has(:checked) {
+  background: var(--wa-color-surface-default);
+  color: var(--wa-color-text-normal);
+  box-shadow: var(--wa-shadow-s);
+}
+.scheme-switch label:has(:focus-visible) { outline: var(--wa-focus-ring); }

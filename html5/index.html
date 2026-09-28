@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" class="wa-theme-default wa-palette-default">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // Picks light or dark before first paint, so a dark page never flashes
+    // light. applyScheme in lib/dark-light-scheme.ts has the same rule; keep in step.
+    (function () {
+      var pref;
+      try { pref = localStorage.getItem('scheme'); } catch (e) {}
+      var dark = pref === 'dark'
+        || (pref !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.add(dark ? 'wa-dark' : 'wa-light');
+    })();
+  </script>
+  <title>MoQ Analyzer</title>
+  <link rel="stylesheet" href="./app.css">
+  <script type="module" src="./app.ts"></script>
+</head>
+<body>
+<wa-page>
+  <header slot="header" class="wa-split">
+    <a class="site-name" href="./">MoQ Analyzer</a>
+    <fieldset id="scheme-switch" class="scheme-switch">
+      <legend class="wa-visually-hidden">Color scheme</legend>
+      <label id="scheme-light"><input class="wa-visually-hidden" type="radio" name="scheme" value="light"><wa-icon name="sun" label="Light"></wa-icon></label>
+      <label id="scheme-dark"><input class="wa-visually-hidden" type="radio" name="scheme" value="dark"><wa-icon name="moon" label="Dark"></wa-icon></label>
+      <label id="scheme-auto"><input class="wa-visually-hidden" type="radio" name="scheme" value="auto" checked><wa-icon name="circle-half-stroke" label="Auto"></wa-icon></label>
+      <wa-tooltip for="scheme-light">Light</wa-tooltip>
+      <wa-tooltip for="scheme-dark">Dark</wa-tooltip>
+      <wa-tooltip for="scheme-auto">Auto: follows your system</wa-tooltip>
+    </fieldset>
+  </header>
+
+  <main>
+    <label id="drop-zone" class="drop-zone wa-stack wa-gap-xs">
+      <strong>Drop mlog files here, or pick them.</strong>
+      <input id="file-input" type="file" multiple accept=".mlog,.gz">
+      <span class="quiet">Names look like <code>&lt;cid&gt;_client.mlog.gz</code> or <code>&lt;cid&gt;_server.mlog</code>.</span>
+    </label>
+    <p id="status" role="status"></p>
+    <ul id="rejected" class="quiet"></ul>
+
+    <section id="capture" hidden>
+      <h2>Trust</h2>
+      <div id="trust"></div>
+      <h2>Legs</h2>
+      <div id="legs"></div>
+    </section>
+  </main>
+</wa-page>
+</body>
+</html>

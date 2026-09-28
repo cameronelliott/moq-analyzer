@@ -1,0 +1,22 @@
+{
+  "name": "html5",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "rm -rf dist && bun build ./index.html --outdir dist --watch",
+    "build": "rm -rf dist && bun build ./index.html --production --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.13.0",
+    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
+    "echarts": "6.1.0",
+    "lit": "^3.3.3",
+    "mlog-sql": "file:../mlog-sql"
+  }
+}
