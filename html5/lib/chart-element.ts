@@ -128,6 +128,14 @@ export class AppEChart extends LitElement {
 
 customElements.define(CHART_TAG, AppEChart);
 
+/** Gives each `<app-echart data-chart="id">` under root its option from charts. */
+export function mountCharts(root: ParentNode, charts: Readonly<Record<string, EChartsOption>>): void {
+  for (const el of root.querySelectorAll('app-echart')) {
+    const id = el.dataset.chart;
+    if (id !== undefined && id in charts) el.option = charts[id];
+  }
+}
+
 declare global {
   interface HTMLElementTagNameMap {
     'app-echart': AppEChart;

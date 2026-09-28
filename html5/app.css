@@ -2,7 +2,13 @@
 
 html, body { min-height: 100%; padding: 0; margin: 0; }
 
+wa-page { --menu-width: 16rem; }
+wa-page[view='mobile'] { --menu-width: auto; }
+
 .site-name { font-weight: var(--wa-font-weight-bold); text-decoration: none; }
+[slot='navigation'] { padding: var(--wa-space-l); }
+[slot='navigation'] a { text-decoration: none; }
+[slot='navigation'] a[aria-current='page'] { font-weight: var(--wa-font-weight-bold); }
 main { padding: var(--wa-space-l); }
 .quiet { color: var(--wa-color-text-quiet); }
 
@@ -45,3 +51,68 @@ main { padding: var(--wa-space-l); }
   box-shadow: var(--wa-shadow-s);
 }
 .scheme-switch label:has(:focus-visible) { outline: var(--wa-focus-ring); }
+
+/* The Overview. From ../html3/_includes/base.liquid. Cards sit on a tray and
+   are told apart by surface color alone: no borders, no shadows. */
+.dashboard {
+  .stats { --min-column-size: 14ch; }
+  .stats dt { color: var(--wa-color-text-quiet); }
+  .stats dd { margin: 0; }
+  .tray {
+    --min-column-size: 30ch;
+    padding: var(--wa-space-xs);
+    border-radius: var(--wa-border-radius-l);
+    background: var(--wa-color-surface-lowered);
+  }
+  .card {
+    padding: var(--wa-space-l);
+    border-radius: var(--wa-border-radius-m);
+    background: var(--wa-color-surface-default);
+  }
+  .card wa-icon { color: var(--wa-color-text-quiet); }
+  .card app-echart { margin-block: 0; }
+  /* The title is the link to its view: heading ink, a quiet underline that
+     goes loud on hover. */
+  .card h2 a {
+    color: inherit;
+    text-decoration-color: var(--wa-color-surface-border);
+    text-underline-offset: 0.2em;
+  }
+  .card h2 a:hover { text-decoration-color: currentColor; }
+
+  /* A share of a whole: one bar split by count, and a row per part. */
+  .bar {
+    display: flex;
+    gap: 2px;
+    block-size: 1.25rem;
+    border-radius: var(--wa-border-radius-s);
+    overflow: hidden;
+    font-size: var(--wa-font-size-2xs);
+    font-weight: var(--wa-font-weight-semibold);
+  }
+  .bar > span { display: grid; place-items: center; min-inline-size: 3px; }
+  .bar > span[style="flex-grow: 0"] { display: none; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li {
+    display: flex;
+    align-items: center;
+    gap: var(--wa-space-xs);
+    margin: 0;   /* Web Awesome's native li indent */
+    padding-block: var(--wa-space-xs);
+    border-block-start: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  }
+  .rows li > :last-child { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+  /* A distribution's quantiles, side by side under its histogram. */
+  .quantiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    margin: 0;
+  }
+  .quantiles dt { color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-xs); }
+  .quantiles dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wa-font-weight-semibold); }
+  .dot { inline-size: 0.625rem; block-size: 0.625rem; border-radius: 2px; }
+  .success { background: var(--wa-color-success-fill-loud); color: var(--wa-color-success-on-loud); }
+  /* The same gray the card charts use for what is compared against. */
+  .neutral { background: var(--wa-color-gray-60); }
+  .danger { background: var(--wa-color-danger-fill-loud); }
+}

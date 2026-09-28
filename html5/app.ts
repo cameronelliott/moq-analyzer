@@ -1,10 +1,11 @@
 // The analyzer's bundle entry. index.html loads it with one script tag.
 
-import { CaptureError, openCapture } from 'mlog-sql';
-import './lib/chart-element';
+import { CaptureError, openCapture, type Distribution, type Measure } from 'mlog-sql';
+import { mountCharts } from './lib/chart-element';
 import { installSchemeSwitch } from './lib/dark-light-scheme';
 import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
 import { html } from './lib/html';
+import { overview } from './lib/overview';
 import { legSummaryTable, trustTable } from './lib/tables';
 import { tracesFromFiles } from './lib/trace-files';
 
@@ -19,12 +20,16 @@ import { registerIconLibrary } from '@awesome.me/webawesome/dist/components/icon
 // wa-page draws its mobile menu button with <wa-icon name="bars">, and the
 // stock 'default' library resolves that to a Font Awesome CDN URL at runtime --
 // one more origin, for one glyph. Overriding the library keeps every asset
-// local; an icon it does not know renders as nothing. The header's scheme
-// switch adds sun, moon and circle-half-stroke.
+// local; an icon it does not know renders as nothing. Overview cards add
+// circle-info, and the header's scheme switch adds sun, moon and
+// circle-half-stroke.
 const ICONS: Record<string, string> = {
   bars: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
     + 'stroke="currentColor" stroke-width="2" stroke-linecap="round">'
     + '<path d="M3 6h18M3 12h18M3 18h18"/></svg>',
+  'circle-info': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    + 'stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+    + '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
   sun: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
     + 'stroke="currentColor" stroke-width="2" stroke-linecap="round">'
     + '<circle cx="12" cy="12" r="4"/>'
@@ -69,9 +74,38 @@ const dropZone = element('drop-zone', HTMLLabelElement);
 const fileInput = element('file-input', HTMLInputElement);
 const statusLine = element('status', HTMLParagraphElement);
 const rejectedList = element('rejected', HTMLUListElement);
-const captureView = element('capture', HTMLElement);
+const captureNav = element('capture-nav', HTMLDivElement);
+const overviewView = element('overview', HTMLElement);
 const trustView = element('trust', HTMLDivElement);
 const legsView = element('legs', HTMLDivElement);
+
+// --- views ------------------------------------------------------------------
+// One HTML page; the URL hash picks which <section data-view> shows. The
+// capture views need a loaded capture, so without one every hash shows load.
+
+const CAPTURE_VIEWS = new Set(['overview', 'latency', 'connections']);
+let loaded = false;
+
+function route(): void {
+  const hash = location.hash.slice(1);
+  const view = loaded && CAPTURE_VIEWS.has(hash) ? hash : 'load';
+  for (const section of document.querySelectorAll<HTMLElement>('[data-view]')) {
+    section.hidden = section.dataset.view !== view;
+  }
+  for (const link of document.querySelectorAll<HTMLAnchorElement>('[slot=navigation] a')) {
+    if (link.hash === `#${view}`) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+}
+
+function show(view: string): void {
+  // Setting the same hash fires no hashchange, so route directly as well.
+  location.hash = view;
+  route();
+}
+
+addEventListener('hashchange', route);
+route();
 
 /** Starts an engine. A failure is not reported here: load() awaits it and shows it. */
 function warm(): Promise<BrowserEngine> {
@@ -88,7 +122,9 @@ async function load(files: readonly File[]): Promise<void> {
   if (busy) return;
   busy = true;
   fileInput.disabled = true;
-  captureView.hidden = true;
+  loaded = false;
+  captureNav.hidden = true;
+  show('load');
 
   const { traces, rejected } = tracesFromFiles(files);
   rejectedList.innerHTML = html`${rejected.map((r) => html`<li>${r.file}: ${r.reason}</li>`)}`.text;
@@ -109,10 +145,22 @@ async function load(files: readonly File[]): Promise<void> {
     // One connection, so one query at a time.
     const trust = await capture.trust();
     const legs = await capture.legSummary();
+    const dists = {
+      'end to end': await capture.distribution('end to end'),
+      'relay dwell': await capture.distribution('relay dwell'),
+      interarrival: await capture.distribution('interarrival'),
+      bitrate: await capture.distribution('bitrate'),
+    } satisfies Record<Measure, Distribution | null>;
 
+    const view = overview({ traces: traces.length, trust, distributions: dists });
+    overviewView.innerHTML = view.html.text;
+    mountCharts(overviewView, view.charts);
     trustView.innerHTML = trustTable(trust).text;
     legsView.innerHTML = legSummaryTable(legs).text;
-    captureView.hidden = false;
+
+    loaded = true;
+    captureNav.hidden = false;
+    show('overview');
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
   } catch (e) {

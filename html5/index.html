@@ -19,7 +19,7 @@
   <script type="module" src="./app.ts"></script>
 </head>
 <body>
-<wa-page>
+<wa-page mobile-breakpoint="920">
   <header slot="header" class="wa-split">
     <a class="site-name" href="./">MoQ Analyzer</a>
     <fieldset id="scheme-switch" class="scheme-switch">
@@ -33,20 +33,39 @@
     </fieldset>
   </header>
 
-  <main>
-    <label id="drop-zone" class="drop-zone wa-stack wa-gap-xs">
-      <strong>Drop mlog files here, or pick them.</strong>
-      <input id="file-input" type="file" multiple accept=".mlog,.gz">
-      <span class="quiet">Names look like <code>&lt;cid&gt;_client.mlog.gz</code> or <code>&lt;cid&gt;_server.mlog</code>.</span>
-    </label>
-    <p id="status" role="status"></p>
-    <ul id="rejected" class="quiet"></ul>
+  <nav slot="navigation" class="wa-stack wa-gap-xs">
+    <a href="#load" data-drawer="close">Load files</a>
+    <div id="capture-nav" class="wa-stack wa-gap-xs" hidden>
+      <span class="wa-caption-s">Capture</span>
+      <a href="#overview" data-drawer="close">Overview</a>
+      <a href="#latency" data-drawer="close">Latency</a>
+      <a href="#connections" data-drawer="close">Connections</a>
+    </div>
+  </nav>
 
-    <section id="capture" hidden>
-      <h2>Trust</h2>
-      <div id="trust"></div>
-      <h2>Legs</h2>
+  <main>
+    <p id="status" role="status"></p>
+
+    <!-- One view shows at a time; the URL hash picks it. -->
+    <section data-view="load">
+      <label id="drop-zone" class="drop-zone wa-stack wa-gap-xs">
+        <strong>Drop mlog files here, or pick them.</strong>
+        <input id="file-input" type="file" multiple accept=".mlog,.gz">
+        <span class="quiet">Names look like <code>&lt;cid&gt;_client.mlog.gz</code> or <code>&lt;cid&gt;_server.mlog</code>.</span>
+      </label>
+      <ul id="rejected" class="quiet"></ul>
+    </section>
+
+    <section data-view="overview" id="overview" hidden></section>
+
+    <section data-view="latency" hidden>
+      <h1>Latency</h1>
       <div id="legs"></div>
+    </section>
+
+    <section data-view="connections" hidden>
+      <h1>Connections</h1>
+      <div id="trust"></div>
     </section>
   </main>
 </wa-page>
