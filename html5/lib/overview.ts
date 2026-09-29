@@ -145,21 +145,45 @@ export function distributionCard(measure: Measure, d: Distribution | null): View
   };
 }
 
-const sum = (rows: readonly TrustRow[], key: 'sent' | 'joined' | 'lost' | 'outside_window' | 'negative_hops') =>
-  rows.reduce((total, r) => total + r[key], 0);
+type Count = 'sent' | 'joined' | 'lost' | 'outside_window' | 'negative_hops';
+
+// A NULL count is one the loaded logs cannot back, as when only the relay's
+// side of a connection is loaded. It is left out of a sum, never read as 0.
+const sum = (rows: readonly TrustRow[], key: Count) =>
+  rows.reduce((total, r) => total + (r[key] ?? 0), 0);
+
+/** The connections where `key` was measured. */
+const measured = (rows: readonly TrustRow[], key: Count) => rows.filter((r) => r[key] !== null);
+
+const connections = (n: number) => `${count(n)} connection${n === 1 ? '' : 's'}`;
 
 function deliveryCard(trust: readonly TrustRow[]): SafeHtml {
-  const joined = sum(trust, 'joined');
-  const outside = sum(trust, 'outside_window');
-  const lost = sum(trust, 'lost');
+  // lost and outside_window are NULL together, and joined is set wherever they are
+  const rows = measured(trust, 'lost');
+  const head = cardHead('delivery', 'Delivery', DELIVERY_ABOUT, '#connections');
+  if (rows.length === 0) {
+    return html`<section class="card wa-stack">
+    ${head}
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">Not measured</span>
+      <span class="wa-caption-m">Loss needs both ends of a connection, with objects seen at both. No connection in this capture has that.</span>
+    </div>
+  </section>`;
+  }
+  const joined = sum(rows, 'joined');
+  const outside = sum(rows, 'outside_window');
+  const lost = sum(rows, 'lost');
   const whole = joined + outside + lost;
   const label = `${percent(joined, whole)} joined, ${percent(outside, whole)} outside the window, `
     + (lost ? `${percent(lost, whole)} lost` : 'none lost');
+  const rest = trust.length - rows.length;
   return html`<section class="card wa-stack">
-    ${cardHead('delivery', 'Delivery', DELIVERY_ABOUT, '#connections')}
+    ${head}
     <div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">${count(lost)} lost</span>
-      <span class="wa-caption-m">of ${count(sum(trust, 'sent'))} objects sent on ${count(trust.length)} connections.</span>
+      <span class="wa-caption-m">of ${count(sum(rows, 'sent'))} objects sent on ${connections(rows.length)}.${rest > 0
+        ? ` ${count(rest)} more connection${rest === 1 ? '' : 's'} could not be measured.`
+        : ''}</span>
     </div>
     <div class="bar" role="img" aria-label="${label}">
       <span class="success" style="flex-grow: ${joined}">${percent(joined, whole)}</span>
@@ -175,12 +199,23 @@ function deliveryCard(trust: readonly TrustRow[]): SafeHtml {
 }
 
 function clocksCard(trust: readonly TrustRow[]): SafeHtml {
-  const negative = sum(trust, 'negative_hops');
+  const rows = measured(trust, 'negative_hops');
+  const head = cardHead('clocks', 'Clocks', CLOCKS_ABOUT, '#connections');
+  if (rows.length === 0) {
+    return html`<section class="card wa-stack">
+    ${head}
+    <div class="wa-stack wa-gap-3xs">
+      <span class="wa-heading-xl">—</span>
+      <span class="wa-caption-m">Clock checks need both ends of a connection. No connection in this capture has both.</span>
+    </div>
+  </section>`;
+  }
+  const negative = sum(rows, 'negative_hops');
   return html`<section class="card wa-stack">
-    ${cardHead('clocks', 'Clocks', CLOCKS_ABOUT, '#connections')}
+    ${head}
     <div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">${count(negative)}</span>
-      <span class="wa-caption-m">negative hops in ${count(sum(trust, 'joined'))} joined.</span>
+      <span class="wa-caption-m">negative hops in ${count(sum(rows, 'joined'))} joined.</span>
     </div>
     ${negative === 0
       ? html`<p class="wa-body-s">That rules out clock error larger than the transit time, and nothing finer.</p>`
@@ -204,7 +239,7 @@ export function overview(data: OverviewData): View {
   <dl class="stats wa-grid wa-gap-l">
     ${stat('Traces', count(data.traces))}
     ${stat('Connections', count(data.trust.length))}
-    ${stat('Hops joined', count(sum(data.trust, 'joined')))}
+    ${stat('Hops joined', measured(data.trust, 'joined').length === 0 ? '—' : count(sum(data.trust, 'joined')))}
   </dl>
   <div class="tray wa-grid wa-gap-xs">
     ${CARDS.slice(0, 2).map((spec) => card(spec, data.distributions[spec.measure]))}

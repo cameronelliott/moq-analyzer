@@ -77,6 +77,7 @@ export async function openCapture(
         },
         legSummary: () => run("legSummary", QUERIES.legSummary),
         trust: () => run("trust", QUERIES.trust),
+        coverage: () => run("coverage", QUERIES.coverage),
         jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),
         jitterSeries: () => run("jitterSeries", QUERIES.jitterSeries),
         objectBitrateSummary: () => run("objectBitrateSummary", QUERIES.objectBitrateSummary),

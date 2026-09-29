@@ -24,6 +24,7 @@ export type HeaderMatchesApi = [
     Expect<Equal<typeof H.CaptureError, typeof I.CaptureError>>,
     Expect<Equal<H.LegSummaryRow, Rows<"legSummary">>>,
     Expect<Equal<H.TrustRow, Rows<"trust">>>,
+    Expect<Equal<H.CoverageRow, Rows<"coverage">>>,
     Expect<Equal<H.JitterSummaryRow, Rows<"jitterSummary">>>,
     Expect<Equal<H.JitterSeriesRow, Rows<"jitterSeries">>>,
     Expect<Equal<H.ObjectBitrateSummaryRow, Rows<"objectBitrateSummary">>>,

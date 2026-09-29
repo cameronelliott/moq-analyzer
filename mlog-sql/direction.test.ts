@@ -313,6 +313,8 @@ test("one trace carrying both directions produces no hop with itself", () => {
         expect(query<{ n: number }>(db, "select count(*) as n from object")[0]!.n).toBe(2);
         // a hop crosses a connection; one endpoint's own two sides are not one
         expect(query<{ n: number }>(db, "select count(*) as n from hop")[0]!.n).toBe(0);
+        // and dwell spans two connections, so one trace is not a dwell either
+        expect(query<{ n: number }>(db, "select count(*) as n from dwell")[0]!.n).toBe(0);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -364,6 +366,85 @@ test("dwell is the relay's own two sides, across two connections", () => {
                   + (select us from dwell)
                   + (select us from hop where cid='c2'))::int as total`))
             .toEqual([{ total: 90_000 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("dwell needs only the relay's own traces", () => {
+    const dir = tmp("mlog-dwell-relay-");
+    try {
+        // The same relay as above, with neither far end loaded. Dwell reads two
+        // relay timestamps, so the publisher's and subscriber's logs add nothing.
+        const track = (id: number, alias: number) => [subscribe(1, id, "/bbb", "1.m4s"),
+                                                      subscribeOk(2, id, alias)];
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            ...track(4, 4),
+            subgroupHeader("created", 61, 3, 4, 7), object("created", 62, 3, 7, 0),
+        ]);
+        const db = join(dir, "relay.db");
+        expect(loadInto(db, [
+            { log: relayIn, cid: "c1" }, { log: relayOut, cid: "c2" },
+        ]).ok).toBe(true);
+
+        expect(query<{ n: number }>(db, "select count(*) as n from hop")[0]!.n).toBe(0);
+        expect(query<{ in_cid: string; out_cid: string; us: number; payload_length: number }>(db,
+            "select in_cid, out_cid, us::int as us, payload_length::int as payload_length from dwell"))
+            .toEqual([{ in_cid: "c1", out_cid: "c2", us: 2_000, payload_length: 1271 }]);
+
+        // leg has the one leg the relay can measure alone
+        expect(query<{ sub_cid: string; leg_no: number; us: number }>(db,
+            "select sub_cid, leg_no, us::int as us from leg"))
+            .toEqual([{ sub_cid: "c2", leg_no: 2, us: 2_000 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("leg keeps whole paths when the far ends are logged", () => {
+    const dir = tmp("mlog-leg-whole-");
+    try {
+        // The relay forwards objects 0 and 1. The subscriber's log stops after
+        // object 0, so object 1 has a dwell but no leg 3.
+        const track = (id: number, alias: number) => [subscribe(1, id, "/bbb", "1.m4s"),
+                                                      subscribeOk(2, id, alias)];
+        const pub = writeLog(dir, "pub.jsonl", header("client"), [
+            ...track(5, 5), subgroupHeader("created", 9, 2, 5, 7),
+            object("created", 10, 2, 7, 0), object("created", 20, 2, 7, 1),
+        ]);
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            ...track(4, 4), subgroupHeader("parsed", 59, 2, 4, 7),
+            object("parsed", 60, 2, 7, 0), object("parsed", 70, 2, 7, 1),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            ...track(4, 4), subgroupHeader("created", 61, 3, 4, 7),
+            object("created", 62, 3, 7, 0), object("created", 72, 3, 7, 1),
+        ]);
+        const sub = writeLog(dir, "sub.jsonl", header("client"), [
+            ...track(4, 4), subgroupHeader("parsed", 99, 3, 4, 7),
+            object("parsed", 100, 3, 7, 0),
+        ]);
+        const db = join(dir, "whole.db");
+        expect(loadInto(db, [
+            { log: pub, cid: "c1" }, { log: relayIn, cid: "c1" },
+            { log: relayOut, cid: "c2" }, { log: sub, cid: "c2" },
+        ]).ok).toBe(true);
+
+        // dwell has both objects: it needs no far end
+        expect(query<{ object_id: number }>(db,
+            "select object_id from dwell order by object_id"))
+            .toEqual([{ object_id: 0 }, { object_id: 1 }]);
+
+        // leg does not. A leg 2 without its leg 3 would average dwell over a
+        // different set of objects than legs 1 and 3, and the means would stop
+        // adding up to end to end.
+        expect(query<{ object_id: number; n: number }>(db,
+            "select object_id, count(*)::int as n from leg group by 1 order by 1"))
+            .toEqual([{ object_id: 0, n: 3 }]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -853,8 +934,8 @@ function pairedCapture(dir: string, tag: string,
     return { db, ok: r.ok };
 }
 
-type Trust = { sent: number; received: number; joined: number;
-               lost: number; outside_window: number };
+type Trust = { sent: number; received: number; joined: number | null;
+               lost: number | null; outside_window: number | null };
 
 const trustOf = (db: string) => query<Trust>(db,
     `select sent::int as sent, received::int as received, joined::int as joined,
@@ -921,6 +1002,83 @@ test("a receiver clock behind the sender's shows up as a negative hop", () => {
         expect(query<{ joined: number; neg: number }>(db,
             "select joined::int as joined, negative_hops::int as neg from trust"))
             .toEqual([{ joined: 1, neg: 1 }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("one end of a connection says what it sent, and nothing about loss", () => {
+    const dir = tmp("mlog-trust-oneend-");
+    try {
+        // the relay's side of a subscriber's connection, with no subscriber log
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("created", 9, 3, 4, 7),
+            object("created", 10, 3, 7, 0), object("created", 20, 3, 7, 1),
+        ]);
+        const db = join(dir, "oneend.db");
+        expect(loadInto(db, [{ log: relayOut, cid: "c1" }]).ok).toBe(true);
+
+        // zero lost would be a claim; with one end there is nothing to claim
+        expect(trustOf(db)).toEqual({
+            sent: 2, received: 0, joined: null, lost: null, outside_window: null,
+        });
+        expect(query<{ n: number | null }>(db,
+            "select negative_hops::int as n from trust")[0]!.n).toBeNull();
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("a receiver that logged no objects gives no window, so no loss count", () => {
+    const dir = tmp("mlog-trust-nowin-");
+    try {
+        // both ends are logged, but nothing joined, so there is no window in
+        // which a missing object would count as lost
+        const { db, ok } = pairedCapture(dir, "nowin", [[10, 0], [20, 1]], []);
+        expect(ok).toBe(true);
+
+        expect(trustOf(db)).toEqual({
+            sent: 2, received: 0, joined: 0, lost: null, outside_window: null,
+        });
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("coverage says which ends of each connection were logged, and which end sends", () => {
+    const dir = tmp("mlog-coverage-");
+    try {
+        // Relay only on c1 and c2, as a relay operator would have it. c3 is a
+        // client that subscribed and logged no object.
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("parsed", 59, 2, 4, 7), object("parsed", 60, 2, 7, 0),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            subscribe(1, 4, "/bbb", "1.m4s"), subscribeOk(2, 4, 4),
+            subgroupHeader("created", 61, 3, 4, 7), object("created", 62, 3, 7, 0),
+        ]);
+        const idle = writeLog(dir, "idle.jsonl", header("client"), [
+            subscribe(1, 4, "/bbb", "1.m4s"),
+        ]);
+        const db = join(dir, "coverage.db");
+        expect(loadInto(db, [
+            { log: relayIn, cid: "c1" }, { log: relayOut, cid: "c2" }, { log: idle, cid: "c3" },
+        ]).ok).toBe(true);
+
+        // The sender comes from either end: the relay parsing on c1 means the
+        // client end sent. trust's sender_is only sees the end that created.
+        expect(query<{ cid: string; client_traces: number; server_traces: number;
+                       sender: string | null }>(db,
+            `select cid, client_traces::int as client_traces,
+                    server_traces::int as server_traces, sender
+             from coverage order by cid`))
+            .toEqual([
+                { cid: "c1", client_traces: 0, server_traces: 1, sender: "client" },
+                { cid: "c2", client_traces: 0, server_traces: 1, sender: "server" },
+                { cid: "c3", client_traces: 1, server_traces: 0, sender: null },
+            ]);
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }

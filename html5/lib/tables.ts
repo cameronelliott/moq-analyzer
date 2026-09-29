@@ -14,7 +14,7 @@ export function trustTable(rows: readonly TrustRow[]): SafeHtml {
 <thead><tr><th>connection</th><th>sender is</th><th class="num">sent</th><th class="num">received</th><th class="num">joined</th><th class="num">lost</th><th class="num">outside window</th><th class="num">negative hops</th></tr></thead>
 <tbody>${rows.map((r) => html`<tr><td>${shortCid(r.cid)}</td><td>${r.sender_is ?? '—'}</td>${[
     r.sent, r.received, r.joined, r.lost, r.outside_window, r.negative_hops,
-  ].map((n) => num(count(n)))}</tr>`)}</tbody>
+  ].map((n) => num(n === null ? '—' : count(n)))}</tr>`)}</tbody>
 </table></div>`;
 }
 

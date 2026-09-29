@@ -193,10 +193,12 @@ function checkType(v: unknown, c: Column, fail: (m: string) => CaptureError): st
 // --- queries ----------------------------------------------------------------
 
 // The fixed sets the views produce, from schema.sql: the `leg` view's three
-// legs, the `direction` ENUM, and object_bitrate_series's grouping.
+// legs, the `direction` ENUM, coverage's sender, and object_bitrate_series's
+// grouping.
 const LEG_NOS = [1, 2, 3] as const;
 const LEGS = ["pub -> relay", "relay dwell", "relay -> sub"] as const;
 const DIRECTIONS = ["created", "parsed"] as const;
+const SENDERS = ["client", "server", "both"] as const;
 const SCOPES = ["all", "track"] as const;
 const MEASURES = ["end to end", "relay dwell", "interarrival", "bitrate"] as const;
 const UNITS = ["ms", "kbit/s"] as const;
@@ -348,10 +350,26 @@ export const QUERIES = {
             sender_is: col("VARCHAR", true),   // NULL when nothing was sent on the connection
             sent: col("INTEGER", false),
             received: col("INTEGER", false),
-            joined: col("INTEGER", false),
-            lost: col("INTEGER", false),
-            outside_window: col("INTEGER", false),
-            negative_hops: col("INTEGER", false),
+            // NULL when only one end of the connection was loaded
+            joined: col("INTEGER", true),
+            // NULL when nothing joined, so there is no window
+            lost: col("INTEGER", true),
+            outside_window: col("INTEGER", true),
+            negative_hops: col("INTEGER", true),   // NULL as joined
+        },
+    },
+    coverage: {
+        sql: `SELECT cid,
+                     client_traces::INTEGER AS client_traces,
+                     server_traces::INTEGER AS server_traces,
+                     sender
+              FROM coverage
+              ORDER BY cid`,
+        columns: {
+            cid: col("VARCHAR", false),
+            client_traces: col("INTEGER", false),
+            server_traces: col("INTEGER", false),
+            sender: col("VARCHAR", true, SENDERS),   // NULL when no object was logged
         },
     },
     distributionSummary: {

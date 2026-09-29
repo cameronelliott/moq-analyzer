@@ -81,14 +81,31 @@ export interface LegSummaryRow {
 
 export interface TrustRow {
     readonly cid: string;
-    /** NULL when nothing was sent on the connection. */
+    /** The end that created objects. NULL when no loaded end created any. */
     readonly sender_is: string | null;
     readonly sent: number;
     readonly received: number;
-    readonly joined: number;
-    readonly lost: number;
-    readonly outside_window: number;
-    readonly negative_hops: number;
+    /** NULL when only one end of the connection was loaded. */
+    readonly joined: number | null;
+    /** NULL when nothing joined, so no window says what counts as lost. */
+    readonly lost: number | null;
+    /** NULL as `lost`. */
+    readonly outside_window: number | null;
+    /** NULL as `joined`. */
+    readonly negative_hops: number | null;
+}
+
+/** `client` or `server`: the end that sent objects. `both`: objects went each way. */
+export type Sender = "client" | "server" | "both";
+
+/** One connection: which of its ends were loaded. A measure needs certain ends
+ *  (MEASURES.md), and has no rows without them. */
+export interface CoverageRow {
+    readonly cid: string;
+    readonly client_traces: number;
+    readonly server_traces: number;
+    /** Read from either end. NULL when no object was logged. */
+    readonly sender: Sender | null;
 }
 
 export interface JitterSummaryRow {
@@ -203,6 +220,7 @@ export interface Capture {
     distribution(measure: Measure, track?: Track): Promise<Distribution | null>;
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
+    coverage(): Promise<CoverageRow[]>;
     jitterSummary(): Promise<JitterSummaryRow[]>;
     jitterSeries(): Promise<JitterSeriesRow[]>;
     objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;

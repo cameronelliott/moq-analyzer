@@ -112,8 +112,12 @@ Unknown events keep `data` verbatim in event_other, so those round-trip already.
   join key collides across captures: two captures in one file left every leg
   median right while relay dwell's mean went out by 7x. Compare runs with ATTACH
   -- a view resolves against its own database's tables.
-- `hop` is the one place the cross-trace join is written; hand-rolling it is how
-  the above goes wrong silently. `dwell` is built from a pair of hops.
+- `hop` is the one place the cross-connection join is written; hand-rolling it
+  is how the above goes wrong silently. `dwell` joins the relay's own in and out
+  traces, so it needs no far-end log. `leg` is where hops and dwell meet.
+- partial captures are supported by building each view from only the traces
+  its measure needs; `coverage` says which ends were loaded. A count the loaded
+  logs cannot back is NULL, never 0.
 - no clock table. No mlog records clock quality, so `trust` counts only what
   the logs show. `negative_hops` is the one clock signal and it is one-way:
   nonzero proves disagreement, zero proves nothing.

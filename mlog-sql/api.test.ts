@@ -21,7 +21,7 @@ import {
 import {
     openCapture, CaptureError,
     type Distribution, type Measure,
-    type Engine, type TraceSource, type LegSummaryRow, type JitterSummaryRow,
+    type Engine, type TraceSource, type CoverageRow, type LegSummaryRow, type JitterSummaryRow,
     type JitterSeriesRow, type ObjectBitrateSeriesRow, type ObjectBitrateSummaryRow,
 } from "./api";
 import { QUERIES, col, recordChunks, validateRows } from "./api-internal";
@@ -151,6 +151,15 @@ const EXPECTED_TRUST = [
     { cid: "sub1", sender_is: "server", sent: 3, received: 3, joined: 3, lost: 0, outside_window: 0, negative_hops: 0 },
 ];
 
+const EXPECTED_COVERAGE: CoverageRow[] = [
+    { cid: "pub",  client_traces: 1, server_traces: 1, sender: "client" },
+    { cid: "sub1", client_traces: 1, server_traces: 1, sender: "server" },
+];
+
+// The fixture as a relay operator has it: the relay's side of each connection.
+const relaySources = (): TraceSource[] =>
+    fixtureSources().filter((s) => s.name.endsWith("_server.mlog"));
+
 // Every leg's transit is constant, so D is zero throughout: this pins the
 // plumbing, and direction.test.ts pins the arithmetic. Three objects give two
 // samples each, all in the capture's first second.
@@ -250,6 +259,7 @@ describe("openCapture", () => {
             const cap = await openCapture(engine, fixtureSources());
             expect(await cap.legSummary()).toEqual(EXPECTED_LEGS);
             expect(await cap.trust()).toEqual(EXPECTED_TRUST);
+            expect(await cap.coverage()).toEqual(EXPECTED_COVERAGE);
             expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY);
             expect(await cap.jitterSeries()).toEqual(EXPECTED_JITTER_SERIES);
             expect(await cap.objectBitrateSeries()).toEqual(EXPECTED_BITRATE_SERIES);
@@ -260,6 +270,29 @@ describe("openCapture", () => {
                 expect(await cap.distribution(measure, TRACK)).toEqual(expected);
             }
             expect(await cap.distribution("end to end", { ...TRACK, name: "none" })).toBeNull();
+        } finally {
+            reset();
+        }
+    });
+
+    test("the relay's traces alone give dwell, and no claim about the far ends", async () => {
+        const { engine, reset } = await nodeEngine();
+        try {
+            const cap = await openCapture(engine, relaySources());
+            expect(await cap.coverage()).toEqual(EXPECTED_COVERAGE.map((r) =>
+                ({ ...r, client_traces: 0 })));
+            expect(await cap.legSummary()).toEqual(EXPECTED_LEGS.filter((r) => r.leg_no === 2));
+            expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY.filter((r) => r.leg_no === 2));
+            // Each connection has one end, so nothing joins and nothing is
+            // claimed lost. sender_is is the end that created: none on "pub".
+            expect(await cap.trust()).toEqual([
+                { cid: "pub",  sender_is: null,     sent: 0, received: 3,
+                  joined: null, lost: null, outside_window: null, negative_hops: null },
+                { cid: "sub1", sender_is: "server", sent: 3, received: 0,
+                  joined: null, lost: null, outside_window: null, negative_hops: null },
+            ]);
+            expect(await cap.distribution("relay dwell")).toEqual(flat("relay dwell", 3, 1));
+            expect(await cap.distribution("end to end")).toBeNull();
         } finally {
             reset();
         }
@@ -491,6 +524,13 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
 
             // Roles come from the data: the publisher's connection is sent from
             // its client end, every subscriber's from the relay's server end.
+            const coverage = await cap.coverage();
+            expect(coverage).toHaveLength(5);
+            for (const r of coverage) {
+                expect([r.client_traces, r.server_traces]).toEqual([1, 1]);
+                expect(r.sender).toBe(r.cid === PUBLISHER ? "client" : "server");
+            }
+
             const trust = await cap.trust();
             expect(trust).toHaveLength(5);
             for (const r of trust) {

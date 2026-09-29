@@ -36,6 +36,16 @@ test('trust: cid escaped, counts grouped, NULL shown as a dash', () => {
   expect(new Set(cellCounts(text))).toEqual(new Set([8]));
 });
 
+test('trust: a count the logs cannot back is a dash, not 0', () => {
+  const oneEnd: TrustRow = {
+    ...trust, cid: 'c', received: 0,
+    joined: null, lost: null, outside_window: null, negative_hops: null,
+  };
+  const { text } = trustTable([oneEnd]);
+  expect(text.match(/<td class="num">—<\/td>/g)?.length).toBe(4);
+  expect(text).toContain('<td class="num">0</td>');
+});
+
 test('legs: ms to one decimal', () => {
   const { text } = legSummaryTable([leg]);
   expect(text).toContain('<td class="num">1.2</td>');

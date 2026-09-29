@@ -342,32 +342,44 @@ WHERE s.direction = 'created';
 
 -- Relay dwell: the gap between the relay parsing an object on the way in and
 -- creating it again on the way out, once per outbound connection. Not a hop --
--- it spans two connections at one host, so it is built from a pair of them.
+-- it spans two connections at one host.
+--
+-- Built from the relay's own traces and nothing else, because both timestamps
+-- are the relay's. It used to be built from a pair of hops, which made it need
+-- the publisher's and each subscriber's logs as well, so a relay operator with
+-- only the relay's logs got no dwell at all. On real-6pop the two agree on every
+-- row the old one had; this one also has the 3,052 objects the relay forwarded
+-- after a subscriber's log had stopped. `leg` drops those again (see there).
 --
 -- Assumes one relay, sitting at the server end of every connection. That is the
 -- v1 capture exactly: one publisher, one relay, four subscribers. A chained
 -- relay would break it -- relay A is a client to relay B, so A's outbound trace
 -- reads as a publisher -- because nothing in an mlog says two traces are the
 -- same host. That is the capture that turns role from assumption into data.
+-- A server end that both parses and creates one object is not a dwell with
+-- itself; a dwell always leaves on a different trace than it arrived on.
+--
+-- payload_length is the size the relay parsed. It matched the size it created
+-- on all 230,968 pairs in real-6pop.
 --
 -- On the six-POP captures the median is a sliver, 0.26-0.43 ms, and the mean is
 -- 1.4x to 15x that. Means sum to end-to-end and medians do not, so a per-leg
 -- composition bar has to be built from means.
 CREATE OR REPLACE VIEW dwell AS
 SELECT
-    hin.cid  AS in_cid,
-    hout.cid AS out_cid,
-    hin.track_namespace,
-    hin.track_name,
-    hin.group_id,
-    hin.subgroup_id,
-    hin.object_id,
-    hin.recv_trace AS relay_in_trace,
-    hout.send_trace AS relay_out_trace,
-    hin.t_recv  AS t_in,
-    hout.t_send AS t_out,
-    datediff('microsecond', hin.t_recv, hout.t_send) AS us,
-    hin.payload_length,
+    tin.cid  AS in_cid,
+    tout.cid AS out_cid,
+    i.track_namespace,
+    i.track_name,
+    i.group_id,
+    i.subgroup_id,
+    i.object_id,
+    i.trace_id AS relay_in_trace,
+    o.trace_id AS relay_out_trace,
+    i.wall_time AS t_in,
+    o.wall_time AS t_out,
+    datediff('microsecond', i.wall_time, o.wall_time) AS us,
+    i.payload_length,
     -- The relay already had this object when the subscriber asked for it, so its
     -- dwell is how long the subscriber took to arrive, not how long the relay
     -- took to forward. Both timestamps are the relay's own clock on two of its
@@ -382,14 +394,16 @@ SELECT
     -- at the top. It is the whole of dwell's tail: excluding it leaves a mean
     -- 1.2x the median rather than 15x. A subscriber that joined first has none.
     -- False rather than NULL when no subscribe_ok was seen: unproven, not held.
-    coalesce(hin.t_recv < ok.ok_at, false) AS held
-FROM hop hin
-JOIN trace sin  ON sin.trace_id  = hin.send_trace  AND sin.vantage_point  = 'client'
-JOIN hop hout   ON (hout.track_namespace, hout.track_name,
-                    hout.group_id, hout.subgroup_id, hout.object_id)
-                 = (hin.track_namespace, hin.track_name,
-                    hin.group_id, hin.subgroup_id, hin.object_id)
-JOIN trace sout ON sout.trace_id = hout.send_trace AND sout.vantage_point = 'server'
+    coalesce(i.wall_time < ok.ok_at, false) AS held
+FROM object i
+JOIN trace tin  ON tin.trace_id  = i.trace_id AND tin.vantage_point  = 'server'
+JOIN object o   ON o.direction = 'created'
+               AND o.trace_id <> i.trace_id
+               AND (o.track_namespace, o.track_name,
+                    o.group_id, o.subgroup_id, o.object_id)
+                 = (i.track_namespace, i.track_name,
+                    i.group_id, i.subgroup_id, i.object_id)
+JOIN trace tout ON tout.trace_id = o.trace_id AND tout.vantage_point = 'server'
 LEFT JOIN (
     SELECT c.trace_id, k.track_namespace, k.track_name,
            any_value(tr.reference_time) + to_microseconds(min(c.time_us)) AS ok_at
@@ -398,9 +412,10 @@ LEFT JOIN (
     JOIN trace tr ON tr.trace_id = c.trace_id
     WHERE c.message_type = 'subscribe_ok' AND c.direction = 'created'
     GROUP BY c.trace_id, k.track_namespace, k.track_name
-) ok ON  ok.trace_id        = hout.send_trace
-     AND ok.track_namespace = hin.track_namespace
-     AND ok.track_name      = hin.track_name;
+) ok ON  ok.trace_id        = o.trace_id
+     AND ok.track_namespace = i.track_namespace
+     AND ok.track_name      = i.track_name
+WHERE i.direction = 'parsed';
 
 -- What a chart is allowed to claim, per connection. Everything here is counted
 -- from the mlogs; nothing is inferred.
@@ -421,8 +436,18 @@ LEFT JOIN (
 -- so rather than implying a one-way leg has been verified. These captures were
 -- built to hold reference_time error under 10 us; that is a property of how they
 -- were made, recorded alongside them, and not something the data can show.
+--
+-- NULL where a count would be a claim the logs cannot back. With only one end
+-- of a connection loaded, nothing can join, so joined and negative_hops are
+-- NULL rather than 0: a relay operator's logs would otherwise read as a clean
+-- network. lost and outside_window are NULL whenever there is no window, which
+-- is also the case when both ends are loaded but nothing joined. sent and
+-- received are always counts of what the loaded logs show.
 CREATE OR REPLACE VIEW trust AS
-WITH win AS (
+WITH ends AS (
+    SELECT cid, count(*) AS traces FROM trace GROUP BY cid
+),
+win AS (
     SELECT cid,
            min(t_send) AS first_send, max(t_send) AS last_send,
            min(t_recv) AS first_recv, max(t_recv) AS last_recv,
@@ -451,22 +476,71 @@ SELECT
     any_value(o.vantage_point) FILTER (WHERE o.direction = 'created') AS sender_is,
     count(*) FILTER (WHERE o.direction = 'created')                   AS sent,
     count(*) FILTER (WHERE o.direction = 'parsed')                    AS received,
-    coalesce(any_value(w.joined), 0)                                  AS joined,
+    CASE WHEN any_value(e.traces) >= 2
+         THEN coalesce(any_value(w.joined), 0) END                    AS joined,
     -- sent while both ends were still recording, and never seen to arrive
+    CASE WHEN any_value(w.joined) IS NOT NULL THEN
     (SELECT count(*) FROM unjoined u
       WHERE u.cid = o.cid AND u.direction = 'created'
         AND u.wall_time BETWEEN any_value(w.first_send) AND any_value(w.last_send))
-                                                                      AS lost,
+    END                                                               AS lost,
     -- unjoined only because one log had already stopped, or had not started
+    CASE WHEN any_value(w.joined) IS NOT NULL THEN
     (SELECT count(*) FROM unjoined u
       WHERE u.cid = o.cid
         AND NOT (u.wall_time BETWEEN any_value(w.first_send) AND any_value(w.last_send)))
-                                                                      AS outside_window,
-    coalesce(any_value(w.negative_hops), 0)                           AS negative_hops,
+    END                                                               AS outside_window,
+    CASE WHEN any_value(e.traces) >= 2
+         THEN coalesce(any_value(w.negative_hops), 0) END             AS negative_hops,
     any_value(w.first_send) AS first_send,
     any_value(w.last_send)  AS last_send
-FROM obj o LEFT JOIN win w USING (cid)
+FROM obj o
+LEFT JOIN win  w USING (cid)
+LEFT JOIN ends e USING (cid)
 GROUP BY o.cid;
+
+-- Which ends of each connection were loaded, so a consumer can tell a measure
+-- that is absent because a log is missing from one that is empty. Every view
+-- returns rows only where its inputs exist; this says which inputs exist.
+--
+--   one end of a connection         bitrate, interarrival
+--   the relay's in and out traces   dwell, leg 2
+--   both ends of a connection       hop, trust's joined and lost
+--   both ends of both connections   legs 1 and 3, end to end
+--
+-- A relay operator has server_traces = 1 and client_traces = 0 everywhere.
+--
+-- sender is the end that sent objects, read from either end: a client that
+-- created them, or a server that parsed them, both mean the client sent. That
+-- is how it differs from trust's sender_is, which only sees the end that
+-- created, and is NULL on a publisher's connection when only the relay's side
+-- is loaded. `both` when objects went each way, NULL when none were logged.
+--
+-- A vantage_point other than client or server counts in neither column. Traces
+-- loaded without a cid share one row with a NULL cid; the API always has one.
+CREATE OR REPLACE VIEW coverage AS
+WITH sends AS (
+    SELECT t.cid,
+           CASE WHEN (t.vantage_point = 'client') = (o.direction = 'created')
+                THEN 'client' ELSE 'server' END AS sender
+    FROM object o
+    JOIN trace t USING (trace_id)
+    WHERE t.vantage_point IN ('client', 'server')
+),
+snd AS (
+    SELECT cid,
+           CASE WHEN count(DISTINCT sender) > 1 THEN 'both'
+                ELSE any_value(sender) END AS sender
+    FROM sends
+    GROUP BY cid
+)
+SELECT t.cid,
+       count(*) FILTER (WHERE t.vantage_point = 'client') AS client_traces,
+       count(*) FILTER (WHERE t.vantage_point = 'server') AS server_traces,
+       any_value(s.sender)                                AS sender
+FROM trace t
+LEFT JOIN snd s USING (cid)
+GROUP BY t.cid;
 
 -- One row per object per leg: the whole of chart 1. Three rows for each object
 -- that made it to a subscriber -- into the relay, through it, out to that
@@ -492,34 +566,55 @@ GROUP BY o.cid;
 -- rather than a relay forwarding, and dropping only their middle leg would break
 -- the property that the three sum to end to end. They stay reachable through
 -- `dwell` and `hop`, where catch-up is worth charting on its own.
+--
+-- Whole paths only, for the same reason. When a connection's client end was
+-- logged, a dwell whose object never shows up there is dropped with it: on
+-- real-6pop those are the 3,052 objects sent after a subscriber's log stopped,
+-- and keeping them would average leg 2 over other objects than legs 1 and 3.
+-- When the client end was not logged, there is no leg 1 or 3 to match, and
+-- dwell stands alone. So a relay operator's logs give leg 2 and nothing else.
 CREATE OR REPLACE VIEW leg AS
-SELECT d.out_cid AS sub_cid, d.in_cid, 2 AS leg_no, 'relay dwell' AS leg,
-       d.track_namespace, d.track_name, d.group_id, d.subgroup_id, d.object_id,
-       d.t_in AS t_start, d.t_out AS t_end, d.us, d.payload_length
-FROM dwell d
-WHERE NOT d.held
+WITH far AS (
+    SELECT DISTINCT cid FROM trace WHERE vantage_point = 'client'
+),
+path AS (
+    SELECT d.*,
+           h1.cid AS cid1, h1.t_send AS t1_send, h1.t_recv AS t1_recv, h1.us AS us1,
+           h1.payload_length AS len1,
+           h3.cid AS cid3, h3.t_send AS t3_send, h3.t_recv AS t3_recv, h3.us AS us3,
+           h3.payload_length AS len3
+    FROM dwell d
+    LEFT JOIN hop h1 ON h1.cid = d.in_cid
+                    AND (h1.track_namespace, h1.track_name,
+                         h1.group_id, h1.subgroup_id, h1.object_id)
+                      = (d.track_namespace, d.track_name,
+                         d.group_id, d.subgroup_id, d.object_id)
+    LEFT JOIN hop h3 ON h3.cid = d.out_cid
+                    AND (h3.track_namespace, h3.track_name,
+                         h3.group_id, h3.subgroup_id, h3.object_id)
+                      = (d.track_namespace, d.track_name,
+                         d.group_id, d.subgroup_id, d.object_id)
+    WHERE NOT d.held
+      AND (h1.cid IS NOT NULL OR NOT EXISTS (SELECT 1 FROM far WHERE far.cid = d.in_cid))
+      AND (h3.cid IS NOT NULL OR NOT EXISTS (SELECT 1 FROM far WHERE far.cid = d.out_cid))
+)
+-- cid1 and cid3 say a hop matched; us can be NULL on a matched hop, so it cannot.
+SELECT out_cid AS sub_cid, in_cid, 2 AS leg_no, 'relay dwell' AS leg,
+       track_namespace, track_name, group_id, subgroup_id, object_id,
+       t_in AS t_start, t_out AS t_end, us, payload_length
+FROM path
 UNION ALL
-SELECT d.out_cid, d.in_cid, 1, 'pub -> relay',
-       h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
-       h.t_send, h.t_recv, h.us, h.payload_length
-FROM dwell d
-JOIN hop h ON h.cid = d.in_cid
-          AND (h.track_namespace, h.track_name,
-               h.group_id, h.subgroup_id, h.object_id)
-            = (d.track_namespace, d.track_name,
-               d.group_id, d.subgroup_id, d.object_id)
-WHERE NOT d.held
+SELECT out_cid, in_cid, 1, 'pub -> relay',
+       track_namespace, track_name, group_id, subgroup_id, object_id,
+       t1_send, t1_recv, us1, len1
+FROM path
+WHERE cid1 IS NOT NULL
 UNION ALL
-SELECT d.out_cid, d.in_cid, 3, 'relay -> sub',
-       h.track_namespace, h.track_name, h.group_id, h.subgroup_id, h.object_id,
-       h.t_send, h.t_recv, h.us, h.payload_length
-FROM dwell d
-JOIN hop h ON h.cid = d.out_cid
-          AND (h.track_namespace, h.track_name,
-               h.group_id, h.subgroup_id, h.object_id)
-            = (d.track_namespace, d.track_name,
-               d.group_id, d.subgroup_id, d.object_id)
-WHERE NOT d.held;
+SELECT out_cid, in_cid, 3, 'relay -> sub',
+       track_namespace, track_name, group_id, subgroup_id, object_id,
+       t3_send, t3_recv, us3, len3
+FROM path
+WHERE cid3 IS NOT NULL;
 
 -- Latency summary: one row per subscriber and leg, all tracks together, in ms.
 -- Means as well as medians, because per-leg means add up to the end-to-end mean

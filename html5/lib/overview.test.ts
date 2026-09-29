@@ -58,6 +58,32 @@ test('delivery sums every connection', () => {
   expect(text).toContain('<li><span class="dot success"></span>Joined<span>194</span></li>');
 });
 
+// The relay's side of a connection, with the far end not loaded.
+const oneEnd = (cid: string) => trust({
+  cid, received: 0, joined: null, lost: null, outside_window: null, negative_hops: null,
+});
+
+test('delivery with no connection measured says so, and claims no loss', () => {
+  const { text } = overview(data({ trust: [oneEnd('c'), oneEnd('d')] })).html;
+  expect(text).toContain('Not measured');
+  expect(text).not.toContain(' lost</span>');
+  expect(text).not.toContain('class="bar"');
+});
+
+test('delivery sums only the connections it can measure, and counts the rest', () => {
+  const { text } = overview(data({ trust: [trust(), oneEnd('d')] })).html;
+  expect(text).toContain('1 lost</span>');
+  expect(text).toContain('of 100 objects sent on 1 connection');
+  expect(text).toContain('1 more connection could not be measured');
+});
+
+test('clocks and hops joined with no connection measured are dashes', () => {
+  const { text } = overview(data({ trust: [oneEnd('c')] })).html;
+  expect(text).toContain('<dt class="wa-caption-m">Hops joined</dt><dd class="wa-heading-xl">—</dd>');
+  expect(text).not.toContain('rules out clock error');
+  expect(text).toContain('Clock checks need both ends of a connection');
+});
+
 test('clocks: the no-clock-error sentence only when there are no negative hops', () => {
   expect(overview(data()).html.text).toContain('rules out clock error');
   const bad = overview(data({ trust: [trust({ negative_hops: 3 })] })).html.text;
