@@ -157,7 +157,9 @@ async function load(files: readonly File[]): Promise<void> {
     // Show the Overview now, with a spinner in each distribution card, and
     // fill the cards in as their queries return.
     overviewView.innerHTML = overview({ traces: traces.length, trust, distributions: {} }).html.text;
-    connectionsView.innerHTML = connections(trust).html.text;
+    const connectionsPage = connections(trust);
+    connectionsView.innerHTML = connectionsPage.html.text;
+    mountCharts(connectionsView, connectionsPage.charts);
     const latencyPage = latency(legs);
     latencyView.innerHTML = latencyPage.html.text;
     mountCharts(latencyView, latencyPage.charts);

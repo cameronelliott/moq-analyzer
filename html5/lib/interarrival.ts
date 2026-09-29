@@ -36,8 +36,10 @@ export function receivedTracks(summary: readonly ObjectBitrateSummaryRow[]): Tra
 }
 
 export function interarrival(tracks: readonly TrackDistribution[]): View {
+  // The card grid's 12px right margin suits a padded card, not a page column.
+  // withDefaults merges grid keys, so this changes only `right`.
   const charts = Object.fromEntries(tracks.flatMap(({ d }, i) =>
-    d ? [[`track-${i}`, histogramOption(d, 'gaps')]] : []));
+    d ? [[`track-${i}`, { ...histogramOption(d, 'gaps'), grid: { right: '5%' } }]] : []));
 
   // The card variant: a histogram with no axis names needs no room for them.
   const trackCharts = html`${tracks.map(({ track, d }, i) => html`<h3>${trackName(track)}</h3>

@@ -37,6 +37,11 @@ test('one section and one chart per track; a track with no gaps says so', () => 
   expect(html.text).toContain('data-chart="track-0"');
 });
 
+test('a track histogram keeps clear of the column edge', () => {
+  const { charts } = interarrival([{ track: { namespace: '/bbb', name: '1.m4s' }, d: dist }]);
+  expect(charts['track-0']?.grid).toEqual({ right: '5%' });
+});
+
 test('summary table: one row per track, quantiles in ms', () => {
   const { text } = interarrival([{ track: { namespace: '/bbb', name: '1.m4s' }, d: dist }]).html;
   expect(text).toContain('<td>/bbb/1.m4s</td><td class="num">1,000</td><td class="num">33.4</td>'

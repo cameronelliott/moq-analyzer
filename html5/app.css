@@ -31,6 +31,8 @@ article.wa-prose > :is(h1, h2, h3, h4, ul, ol, blockquote, p:not(:has(> app-echa
 }
 
 .table-scroll { overflow-x: auto; }
+/* A table is as wide as its columns, not the column it sits in. */
+.table-scroll table { inline-size: auto; }
 /* Cells stay on one line; headers may wrap, so a wide table fits the prose column. */
 .table-scroll td { white-space: nowrap; }
 .num { text-align: end; font-variant-numeric: tabular-nums; }

@@ -11,6 +11,11 @@ An object only counts as lost if both ends were still recording when it was
 sent. An object sent after the receiving end's log stopped never joins, which
 looks like loss and is not: it is outside the window.
 
+The objects on each connection that never joined, split into the two. Joined
+objects are in the table above.
+
+<app-echart data-chart="not-joined" height="260px"></app-echart>
+
 ## Clocks
 
 A negative hop is an object logged as arriving before it was sent. Only clock
