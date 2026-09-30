@@ -129,6 +129,26 @@ export interface JitterSeriesRow {
     readonly max_ms: number;
 }
 
+/**
+ * - `relay dwell`: mean time the relay held an object, every subscriber and track pooled.
+ * - `relay egress jitter`: mean |D| of relay dwell, pooled the same way: how
+ *   much the relay's own delay changes from one object to the next.
+ * - `subscriber jitter`: mean |D| on the relay -> subscriber leg, one series
+ *   per subscriber. Needs the subscribers' logs.
+ */
+export type RelaySeries = "relay dwell" | "relay egress jitter" | "subscriber jitter";
+
+/** One dot: one series in one second. Held objects are left out. */
+export interface RelaySeriesRow {
+    readonly series: RelaySeries;
+    /** The subscriber, for `subscriber jitter`. NULL on the two pooled series. */
+    readonly sub_cid: string | null;
+    readonly t_s: number;
+    /** Samples in this second. */
+    readonly n: number;
+    readonly mean_ms: number;
+}
+
 export interface ObjectBitrateSummaryRow {
     readonly cid: string;
     /** As the log wrote it, unchecked. */
@@ -223,6 +243,7 @@ export interface Capture {
     coverage(): Promise<CoverageRow[]>;
     jitterSummary(): Promise<JitterSummaryRow[]>;
     jitterSeries(): Promise<JitterSeriesRow[]>;
+    relaySeries(): Promise<RelaySeriesRow[]>;
     objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
     objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
 }

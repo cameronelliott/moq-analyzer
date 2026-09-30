@@ -783,6 +783,63 @@ test("the frame views summarize leg and jitter per subscriber and leg", () => {
     }
 });
 
+test("relay_series: dwell and egress jitter pooled per second, subscriber jitter per subscriber", () => {
+    const dir = tmp("mlog-relay-series-");
+    try {
+        const { db, ok } = twoTrackPath(dir);
+        expect(ok).toBe(true);
+
+        // Dwell is 1, 1, 2, 1, 1 ms, all sent in the relay's second 0. Egress
+        // jitter is leg 2's |D|: 1, 1 and 0, the first object per track having
+        // none. Subscriber jitter is leg 3's |D|, 2, 1 and 1, in second 1 of the
+        // subscriber's clock, which runs a second ahead.
+        expect(query<{ series: string; sub_cid: string | null; t_s: number;
+                       n: number; mean_ms: number }>(db,
+            `select series, sub_cid, t_s::int as t_s, n::int as n,
+                    round(mean_ms, 3) as mean_ms
+             from relay_series order by series, sub_cid, t_s`))
+            .toEqual([
+                { series: "relay dwell",         sub_cid: null, t_s: 0, n: 5, mean_ms: 1.2 },
+                { series: "relay egress jitter", sub_cid: null, t_s: 0, n: 3, mean_ms: 0.667 },
+                { series: "subscriber jitter",   sub_cid: "c2", t_s: 1, n: 3, mean_ms: 1.333 },
+            ]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("relay_series from the relay's logs alone has no subscriber jitter", () => {
+    const dir = tmp("mlog-relay-series-only-");
+    try {
+        // twoTrackPath's relay, with neither far end: dwell and its |D| only
+        const hdrs = (alias: number) => [
+            subscribe(1, alias, "/bbb", "1.m4s"), subscribeOk(2, alias, alias),
+        ];
+        const relayIn = writeLog(dir, "relay-in.jsonl", header("server"), [
+            ...hdrs(4), subgroupHeader("parsed", 5, 2, 4, 7),
+            object("parsed", 60, 2, 7, 0), object("parsed", 72, 2, 7, 1),
+        ]);
+        const relayOut = writeLog(dir, "relay-out.jsonl", header("server"), [
+            ...hdrs(4), subgroupHeader("created", 5, 3, 4, 7),
+            object("created", 61, 3, 7, 0), object("created", 74, 3, 7, 1),
+        ]);
+        const db = join(dir, "relay.db");
+        expect(loadInto(db, [
+            { log: relayIn, cid: "c1" }, { log: relayOut, cid: "c2" },
+        ]).ok).toBe(true);
+
+        expect(query<{ series: string; n: number; mean_ms: number }>(db,
+            `select series, n::int as n, round(mean_ms, 3) as mean_ms
+             from relay_series order by series`))
+            .toEqual([
+                { series: "relay dwell",         n: 2, mean_ms: 1.5 },
+                { series: "relay egress jitter", n: 1, mean_ms: 1 },
+            ]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 /**
  * One connection, two tracks, five seconds. The sender builds each object at
  * the ms below and the receiver decodes it 50 ms later, in the same second.

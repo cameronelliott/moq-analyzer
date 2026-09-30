@@ -22,6 +22,7 @@ import {
     openCapture, CaptureError,
     type Distribution, type Measure,
     type Engine, type TraceSource, type CoverageRow, type LegSummaryRow, type JitterSummaryRow,
+    type RelaySeriesRow,
     type JitterSeriesRow, type ObjectBitrateSeriesRow, type ObjectBitrateSummaryRow,
 } from "./api";
 import { QUERIES, col, recordChunks, validateRows } from "./api-internal";
@@ -173,6 +174,14 @@ const EXPECTED_JITTER_SERIES = ([1, 2, 3] as const).map((leg_no): JitterSeriesRo
     t_s: 0, n: 2, mean_ms: 0, max_ms: 0,
 }));
 
+// Dwell is 1 ms on all three objects and every transit is constant, so |D| is
+// 0 on both jitter series. All in the capture's first second.
+const EXPECTED_RELAY_SERIES: RelaySeriesRow[] = [
+    { series: "relay dwell",         sub_cid: null,   t_s: 0, n: 3, mean_ms: 1 },
+    { series: "relay egress jitter", sub_cid: null,   t_s: 0, n: 2, mean_ms: 0 },
+    { series: "subscriber jitter",   sub_cid: "sub1", t_s: 0, n: 2, mean_ms: 0 },
+];
+
 // Each of the four traces has three 1271-byte objects inside one second: one
 // `track` row and one `all` row per end, and no interior second to rate.
 const BITRATE_ENDS = [
@@ -262,6 +271,7 @@ describe("openCapture", () => {
             expect(await cap.coverage()).toEqual(EXPECTED_COVERAGE);
             expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY);
             expect(await cap.jitterSeries()).toEqual(EXPECTED_JITTER_SERIES);
+            expect(await cap.relaySeries()).toEqual(EXPECTED_RELAY_SERIES);
             expect(await cap.objectBitrateSeries()).toEqual(EXPECTED_BITRATE_SERIES);
             expect(await cap.objectBitrateSummary()).toEqual(EXPECTED_BITRATE_SUMMARY);
             // The fixture has one track, so it and every track pooled agree.
@@ -283,6 +293,8 @@ describe("openCapture", () => {
                 ({ ...r, client_traces: 0 })));
             expect(await cap.legSummary()).toEqual(EXPECTED_LEGS.filter((r) => r.leg_no === 2));
             expect(await cap.jitterSummary()).toEqual(EXPECTED_JITTER_SUMMARY.filter((r) => r.leg_no === 2));
+            expect(await cap.relaySeries()).toEqual(
+                EXPECTED_RELAY_SERIES.filter((r) => r.series !== "subscriber jitter"));
             // Each connection has one end, so nothing joins and nothing is
             // claimed lost. sender_is is the end that created: none on "pub".
             expect(await cap.trust()).toEqual([
@@ -559,6 +571,22 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
             expect(Math.max(...series.map((r) => r.t_s))).toBeLessThan(1000);
             expect(series.reduce((n, r) => n + r.n, 0))
                 .toBe(jit.reduce((n, r) => n + r.n, 0));
+
+            // relay_series holds the same samples as the leg and jitter frames:
+            // dwell and its |D| pooled, subscriber |D| once per subscriber.
+            const relay = await cap.relaySeries();
+            const samples = (s: string) =>
+                relay.filter((r) => r.series === s).reduce((n, r) => n + r.n, 0);
+            const legN = (rows: readonly { leg_no: number; n: number }[], leg: number) =>
+                rows.filter((r) => r.leg_no === leg).reduce((n, r) => n + r.n, 0);
+            expect(samples("relay dwell")).toBe(legN(legs, 2));
+            expect(samples("relay egress jitter")).toBe(legN(jit, 2));
+            expect(samples("subscriber jitter")).toBe(legN(jit, 3));
+            expect(new Set(relay.filter((r) => r.series === "subscriber jitter")
+                .map((r) => r.sub_cid))).toEqual(new Set(subs));
+            for (const r of relay.filter((r) => r.series === "relay dwell")) {
+                expect(r.mean_ms).toBeLessThan(50);   // held objects are left out
+            }
 
             // Object bitrate. Every end carries the same ~334 kbit/s stream, so
             // a unit slip is far outside 250-450. Track means add up to the

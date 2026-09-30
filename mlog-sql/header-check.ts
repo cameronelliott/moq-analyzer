@@ -27,6 +27,7 @@ export type HeaderMatchesApi = [
     Expect<Equal<H.CoverageRow, Rows<"coverage">>>,
     Expect<Equal<H.JitterSummaryRow, Rows<"jitterSummary">>>,
     Expect<Equal<H.JitterSeriesRow, Rows<"jitterSeries">>>,
+    Expect<Equal<H.RelaySeriesRow, Rows<"relaySeries">>>,
     Expect<Equal<H.ObjectBitrateSummaryRow, Rows<"objectBitrateSummary">>>,
     Expect<Equal<H.ObjectBitrateSeriesRow, Rows<"objectBitrateSeries">>>,
     // Distribution is assembled in api-internal, not a row, so only the value

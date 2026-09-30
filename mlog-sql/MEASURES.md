@@ -15,6 +15,24 @@ view, and then the Capture function that reads it.
 Every series counts `t_s` from `capture_start`, so all series share one time
 axis.
 
+## Relay series
+
+`relay_series` and `relaySeries` give the frame for one chart with two y axes.
+One axis shows relay dwell. The other axis shows relay egress jitter and
+subscriber jitter. One row is one dot: one series in one second.
+
+- Relay dwell is the mean dwell of all subscribers and tracks together.
+- Relay egress jitter is the mean |D| of relay dwell, for all subscribers and
+  tracks together. Both times of dwell come from the relay's clock. Thus D is
+  the change in dwell from one object to the next. It shows how steady the
+  relay is.
+- Subscriber jitter is the mean |D| on the relay to subscriber leg. Each
+  subscriber has its own series, because each subscriber can have a different
+  network.
+- Relay dwell and relay egress jitter need only the relay's logs. Subscriber
+  jitter also needs the subscribers' logs.
+- The rows do not include held objects, as in `leg`.
+
 ## Coverage
 
 A measure has rows only when the logs it needs are loaded. The `coverage` view

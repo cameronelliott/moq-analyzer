@@ -80,6 +80,7 @@ export async function openCapture(
         coverage: () => run("coverage", QUERIES.coverage),
         jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),
         jitterSeries: () => run("jitterSeries", QUERIES.jitterSeries),
+        relaySeries: () => run("relaySeries", QUERIES.relaySeries),
         objectBitrateSummary: () => run("objectBitrateSummary", QUERIES.objectBitrateSummary),
         objectBitrateSeries: () => run("objectBitrateSeries", QUERIES.objectBitrateSeries),
     };

@@ -193,10 +193,11 @@ function checkType(v: unknown, c: Column, fail: (m: string) => CaptureError): st
 // --- queries ----------------------------------------------------------------
 
 // The fixed sets the views produce, from schema.sql: the `leg` view's three
-// legs, the `direction` ENUM, coverage's sender, and object_bitrate_series's
-// grouping.
+// legs, relay_series's three series, the `direction` ENUM, coverage's sender,
+// and object_bitrate_series's grouping.
 const LEG_NOS = [1, 2, 3] as const;
 const LEGS = ["pub -> relay", "relay dwell", "relay -> sub"] as const;
+const RELAY_SERIES = ["relay dwell", "relay egress jitter", "subscriber jitter"] as const;
 const DIRECTIONS = ["created", "parsed"] as const;
 const SENDERS = ["client", "server", "both"] as const;
 const SCOPES = ["all", "track"] as const;
@@ -268,6 +269,23 @@ export const QUERIES = {
             n: col("INTEGER", false),
             mean_ms: col("DOUBLE", false),
             max_ms: col("DOUBLE", false),
+        },
+    },
+    // One row per dot: dwell and its |D| pooled, subscriber |D| per subscriber.
+    relaySeries: {
+        sql: `SELECT series,
+                     sub_cid,
+                     t_s::INTEGER     AS t_s,
+                     n::INTEGER       AS n,
+                     mean_ms::DOUBLE  AS mean_ms
+              FROM relay_series
+              ORDER BY series, sub_cid, t_s`,
+        columns: {
+            series: col("VARCHAR", false, RELAY_SERIES),
+            sub_cid: col("VARCHAR", true),   // NULL on the two pooled series
+            t_s: col("INTEGER", false),
+            n: col("INTEGER", false),
+            mean_ms: col("DOUBLE", false),
         },
     },
     // Bytes are DOUBLE: an INTEGER overflows at 2 GB, about two hours of 2 Mbit/s.

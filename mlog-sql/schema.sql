@@ -700,6 +700,52 @@ FROM (
     GROUP BY ALL
 );
 
+-- Relay series: how long the relay holds objects and how steady that is, next
+-- to how steady delivery is at each subscriber, per second. Built for one chart
+-- with two y axes: dwell on one, the two jitters on the other. One row is one
+-- dot, so the rows are long rather than wide: the number of subscribers varies.
+--
+--   relay dwell           mean of leg 2, pooled over every subscriber and track
+--   relay egress jitter   mean |D| of leg 2, pooled the same way
+--   subscriber jitter     mean |D| of leg 3, one row per subscriber (sub_cid)
+--
+-- Relay egress jitter is RFC 3550 D on the dwell leg. Both of its timestamps are
+-- the relay's, so D there is just dwell minus the previous object's dwell: how
+-- much the relay's own delay wobbles. Subscriber jitter is leg 3's D, and the
+-- same as jitter_series leg 3; it needs the subscribers' logs, and without them
+-- it has no rows. sub_cid is NULL on the two pooled series.
+--
+-- Built on `leg` and `jitter`, so held objects are out. Each dot's second is
+-- when its leg ended: the relay sending, for the first two, and the subscriber
+-- receiving, on the subscriber's clock, for the third. t_s counts from
+-- `capture_start`, as every series does. A second with no sample has no row.
+CREATE OR REPLACE VIEW relay_series AS
+SELECT series, sub_cid, sec,
+       epoch(sec) - epoch((SELECT sec FROM capture_start)) AS t_s,
+       n, mean_ms
+FROM (
+    SELECT 'relay dwell'                             AS series,
+           NULL::VARCHAR                             AS sub_cid,
+           time_bucket(INTERVAL '1 second', t_end)   AS sec,
+           count(*)                                  AS n,
+           avg(us) / 1000                            AS mean_ms
+    FROM leg
+    WHERE leg_no = 2
+    GROUP BY ALL
+    UNION ALL
+    SELECT 'relay egress jitter', NULL::VARCHAR,
+           time_bucket(INTERVAL '1 second', t_end), count(*), avg(jitter_us) / 1000
+    FROM jitter
+    WHERE leg_no = 2 AND jitter_us IS NOT NULL
+    GROUP BY ALL
+    UNION ALL
+    SELECT 'subscriber jitter', sub_cid,
+           time_bucket(INTERVAL '1 second', t_end), count(*), avg(jitter_us) / 1000
+    FROM jitter
+    WHERE leg_no = 3 AND jitter_us IS NOT NULL
+    GROUP BY ALL
+);
+
 -- Chart 2. The gap between an object arriving and the one before it on the same
 -- track, at whichever endpoint decoded it. rtcstats calls this Latency. It is
 -- not RFC 3550 jitter: the gap includes the publisher's own pacing, so a steady
