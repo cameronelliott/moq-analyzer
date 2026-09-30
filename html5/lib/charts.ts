@@ -9,7 +9,7 @@
 // REGISTERED_SERIES. ECharts has no runtime way to ask which are installed.
 
 import { use, init } from 'echarts/core';
-import { BarChart, LineChart } from 'echarts/charts';
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts';
 import {
   DataZoomComponent,
   GridComponent,
@@ -31,6 +31,7 @@ import './echarts-dark';
 use([
   BarChart,
   LineChart,
+  ScatterChart,
   DataZoomComponent,
   GridComponent,
   LegendComponent,
@@ -44,6 +45,6 @@ use([
   CanvasRenderer,
 ]);
 
-export const REGISTERED_SERIES: ReadonlySet<string> = new Set(['bar', 'line']);
+export const REGISTERED_SERIES: ReadonlySet<string> = new Set(['bar', 'line', 'scatter']);
 
 export { init };

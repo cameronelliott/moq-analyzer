@@ -10,6 +10,7 @@ import { connections } from './lib/connections';
 import { interarrival, receivedTracks, type TrackDistribution } from './lib/interarrival';
 import { jitter } from './lib/jitter';
 import { latency } from './lib/latency';
+import { relay } from './lib/relay';
 import { throughput } from './lib/throughput';
 import { tracesFromFiles } from './lib/trace-files';
 
@@ -86,12 +87,13 @@ const throughputView = element('throughput', HTMLElement);
 const interarrivalView = element('interarrival', HTMLElement);
 const jitterView = element('jitter', HTMLElement);
 const latencyView = element('latency', HTMLElement);
+const relayView = element('relay', HTMLElement);
 
 // --- views ------------------------------------------------------------------
 // One HTML page; the URL hash picks which <section data-view> shows. The
 // capture views need a loaded capture, so without one every hash shows load.
 
-const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'interarrival', 'jitter', 'connections']);
+const CAPTURE_VIEWS = new Set(['overview', 'latency', 'throughput', 'interarrival', 'jitter', 'relay', 'connections']);
 let loaded = false;
 
 function route(): void {
@@ -166,6 +168,7 @@ async function load(files: readonly File[]): Promise<void> {
     throughputView.innerHTML = html`<wa-spinner label="Computing throughput"></wa-spinner>`.text;
     interarrivalView.innerHTML = html`<wa-spinner label="Computing interarrival"></wa-spinner>`.text;
     jitterView.innerHTML = html`<wa-spinner label="Computing jitter"></wa-spinner>`.text;
+    relayView.innerHTML = html`<wa-spinner label="Computing relay"></wa-spinner>`.text;
     loaded = true;
     captureNav.hidden = false;
     show('overview');
@@ -198,6 +201,11 @@ async function load(files: readonly File[]): Promise<void> {
     const steady = jitter(await capture.jitterSummary(), await capture.jitterSeries());
     jitterView.innerHTML = steady.html.text;
     mountCharts(jitterView, steady.charts);
+
+    statusLine.textContent = 'Computing relay…';
+    const relayPage = relay(await capture.relaySeries());
+    relayView.innerHTML = relayPage.html.text;
+    mountCharts(relayView, relayPage.charts);
 
     const seconds = ((performance.now() - t0) / 1000).toFixed(1);
     statusLine.textContent = `${traces.length} traces loaded in ${seconds} s.`;
