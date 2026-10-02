@@ -1,4 +1,4 @@
-# Interarrival
+# Object Interarrival Period
 
 The gap between an object arriving at a subscriber and the one before it on
 the same track, pooled over every subscriber. rtcstats calls this latency. It
