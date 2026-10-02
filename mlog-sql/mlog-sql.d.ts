@@ -3,8 +3,40 @@
 // under "default" at runtime, so no internal type reaches a consumer.
 // api.ts imports its public types from here. header-check.ts fails `tsc` when
 // the values or the row types disagree with api.ts.
+//
+// The entry point and the queries come first. The types they name are in three
+// folding regions below: what the caller supplies, rows, distributions.
 
-// --- what the caller supplies -----------------------------------------------
+/**
+ * Load every trace, in order, on one connection, and return the queries.
+ * One capture per engine: an engine that already holds traces is refused.
+ * Throws CaptureError only. After a failure the engine holds a partial load, so
+ * the caller discards it and starts a new one.
+ */
+export declare function openCapture(
+    engine: Engine,
+    traces: readonly TraceSource[],
+    options?: CaptureOptions,
+): Promise<Capture>;
+
+/** Every method throws CaptureError only. */
+export interface Capture {
+    /** One track, or every track pooled when `track` is left out. null when
+     *  there are no samples. */
+    distribution(measure: Measure, track?: Track): Promise<Distribution | null>;
+    legSummary(): Promise<LegSummaryRow[]>;
+    trust(): Promise<TrustRow[]>;
+    coverage(): Promise<CoverageRow[]>;
+    jitterSummary(): Promise<JitterSummaryRow[]>;
+    jitterSeries(): Promise<JitterSeriesRow[]>;
+    relaySeries(): Promise<RelaySeriesRow[]>;
+    objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
+    objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
+}
+
+
+// #region what the caller supplies, and the error
+
 
 /** One connection. The adapter turns duckdb-wasm's Arrow result into plain
  *  rows (`toArray().map(r => r.toJSON())`); mlog-sql checks them. */
@@ -34,8 +66,6 @@ export interface CaptureOptions {
     readonly chunkBytes?: number;
 }
 
-// --- errors -----------------------------------------------------------------
-
 export type CaptureFailure =
     /** A trace failed to load. */
     | { readonly kind: "load"; readonly trace: string; readonly message: string }
@@ -58,7 +88,9 @@ export declare class CaptureError extends Error {
     constructor(failure: CaptureFailure, options?: ErrorOptions);
 }
 
-// --- what comes back --------------------------------------------------------
+// #endregion
+
+// #region rows
 // One row type per query. MEASURES.md says what each measure is and why.
 
 /** `created`: an end sent it. `parsed`: an end received it. */
@@ -184,7 +216,9 @@ export interface ObjectBitrateSeriesRow {
     readonly kbit_s: number;
 }
 
-// --- distributions ----------------------------------------------------------
+// #endregion
+
+// #region distributions
 // One measure's samples, pooled over every subscriber, so the size stays fixed
 // however many subscribers the capture has. Not a view row: one call gives the
 // quantiles and the bins together.
@@ -233,31 +267,4 @@ export interface Distribution {
     readonly bins: readonly Bin[];
 }
 
-/** Every method throws CaptureError only. */
-export interface Capture {
-    /** One track, or every track pooled when `track` is left out. null when
-     *  there are no samples. */
-    distribution(measure: Measure, track?: Track): Promise<Distribution | null>;
-    legSummary(): Promise<LegSummaryRow[]>;
-    trust(): Promise<TrustRow[]>;
-    coverage(): Promise<CoverageRow[]>;
-    jitterSummary(): Promise<JitterSummaryRow[]>;
-    jitterSeries(): Promise<JitterSeriesRow[]>;
-    relaySeries(): Promise<RelaySeriesRow[]>;
-    objectBitrateSummary(): Promise<ObjectBitrateSummaryRow[]>;
-    objectBitrateSeries(): Promise<ObjectBitrateSeriesRow[]>;
-}
-
-// --- loading ----------------------------------------------------------------
-
-/**
- * Load every trace, in order, on one connection, and return the queries.
- * One capture per engine: an engine that already holds traces is refused.
- * Throws CaptureError only. After a failure the engine holds a partial load, so
- * the caller discards it and starts a new one.
- */
-export declare function openCapture(
-    engine: Engine,
-    traces: readonly TraceSource[],
-    options?: CaptureOptions,
-): Promise<Capture>;
+// #endregion
