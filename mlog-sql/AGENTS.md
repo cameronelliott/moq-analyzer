@@ -3,21 +3,11 @@
 This directory defines the database schema and typescript interfaces to use it.
 
 
-# moq transport draft
+# per-subscriber views
 
-
-We have discussed doing this with Claude Code before, and I deferred at that time, which was probably right the right call,
-but maybe it's time to offer my help on 1692
-
-- Add Management Considerations, 
-- Way for client to get diagnostic data from relay
-- Create well defined metrics of things that will be used for management
-
-- https://github.com/moq-wg/moq-transport/issues/1683
-- https://github.com/moq-wg/moq-transport/issues/1692
-- https://github.com/moq-wg/moq-transport/issues/1693
-
-
+- we need to think carefully about when per-subscriber views are okay, and when they are not. if operator capture 100 or 10,000 subscriber views, maybe the data will be prefiltered before the files are supplied to the analyzer, and maybe they won't. I suppose what I am saying, is the current design seems to assume a small set of end-subscribers. I am not sure that is a good assumption.
+- as devils avocate, it could be a good and accurate assumption analyzer operators want to per-subscriber details/metrics/and graphs. this should be explored and answered. 
+- we may or may not reduce per-subscriber views. it's not clear right now. on a case by case basic we will evaluate the utility of each going forward.
 
 
 # reminders for Cameron
