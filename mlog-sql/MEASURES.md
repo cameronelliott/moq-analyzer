@@ -1,16 +1,17 @@
 # Measures
 
-The four measures are bitrate, jitter, loss, and latency.
+The four measures are object bitrate, object jitter, object loss, and object
+latency. Each measure is for a MoQ object, not for a QUIC packet.
 
 The View column gives the rows. The Summary and Series columns give the frame
 view, and then the Capture function that reads it.
 
-| Measure | Shows                                  | View             | Summary                                          | Series                                         |
-|---------|----------------------------------------|------------------|--------------------------------------------------|------------------------------------------------|
-| Latency | where the end-to-end time goes         | `leg`            | `leg_summary`, `legSummary`                      | --                                             |
-| Jitter  | how steady each leg is                 | `jitter`         | `jitter_summary`, `jitterSummary`                | `jitter_series`, `jitterSeries`                |
-| Loss    | if an object was really lost           | `trust`          | `trust`, `trust`                                 | --                                             |
-| Bitrate | media bits for each track, each second | `object_bitrate` | `object_bitrate_summary`, `objectBitrateSummary` | `object_bitrate_series`, `objectBitrateSeries` |
+| Measure        | Shows                                  | View             | Summary                                          | Series                                         |
+| -------------- | -------------------------------------- | ---------------- | ------------------------------------------------ | ---------------------------------------------- |
+| Object latency | where the end-to-end time goes         | `leg`            | `leg_summary`, `legSummary`                      | --                                             |
+| Object jitter  | how steady each leg is                 | `jitter`         | `jitter_summary`, `jitterSummary`                | `jitter_series`, `jitterSeries`                |
+| Object loss    | if an object was really lost           | `trust`          | `trust`, `trust`                                 | --                                             |
+| Object bitrate | media bits for each track, each second | `object_bitrate` | `object_bitrate_summary`, `objectBitrateSummary` | `object_bitrate_series`, `objectBitrateSeries` |
 
 Every series counts `t_s` from `capture_start`, so all series share one time
 axis.
@@ -39,15 +40,16 @@ A measure has rows only when the logs it needs are loaded. The `coverage` view
 and the `coverage` function tell which ends of each connection are loaded. Use
 them to tell a missing log from an empty result.
 
-| Logs loaded                      | Measures                         |
-|----------------------------------|----------------------------------|
-| one end of a connection          | bitrate, interarrival            |
-| the relay's in and out traces    | relay dwell (leg 2), its jitter  |
-| both ends of a connection        | loss (`trust`)                   |
-| both ends of both connections    | legs 1 and 3, end to end         |
+| Logs loaded                   | Measures                        |
+| ----------------------------- | ------------------------------- |
+| one end of a connection       | object bitrate, interarrival    |
+| the relay's in and out traces | relay dwell (leg 2), its jitter |
+| both ends of a connection     | object loss (`trust`)           |
+| both ends of both connections | legs 1 and 3, end to end        |
 
-A relay operator has only the relay's logs. That gives bitrate, interarrival
-at the relay, and relay dwell. It does not give loss or network latency.
+A relay operator has only the relay's logs. That gives object bitrate,
+interarrival at the relay, and relay dwell. It does not give object loss or
+the latency of the network legs.
 
 ## Distributions
 
@@ -65,23 +67,26 @@ seconds and audio seconds together do not mean anything.
 The quantiles include p1 and p5, because a low bitrate is the problem. For
 latency, a high value is the problem.
 
-- Latency: The view gives one value for each leg. The means of the legs add up
-  to the end-to-end mean. The medians do not. The view does not include held
-  objects. Latency is correct only when the clocks agree.
+- Object latency: The view gives one value for each leg. The means of the legs
+  add up to the end-to-end mean. The medians do not. The view does not include
+  held objects. Latency is correct only when the clocks agree.
   - Relay dwell uses only the relay's clock, so it needs only the relay's
     logs. When a far end is loaded, `leg` keeps an object only if that end
     shows it too. Thus all legs use the same objects.
-- Jitter: The view uses RFC 3550 D for each object, leg, and track. Refer to
+- Object jitter: The view uses RFC 3550 D for each object, leg, and track. It
+  is not packet jitter. Refer to
   [RFC-3550-explained.md](RFC-3550-explained.md). A constant clock offset
   cancels. A keyframe causes a high D. Use `payload_length` to separate
   keyframes. Only the summary has p99.
-- Loss: `lost` and `outside_window` are different. Refer to "Cameron's
+- Object loss: A lost object is an object that did not arrive at the far end.
+  It is not packet loss. QUIC sends a lost packet again, so an mlog cannot show
+  packet loss. `lost` and `outside_window` are different. Refer to "Cameron's
   decisions" in AGENTS.md.
-  - Loss needs both ends of a connection. With one end, `joined` and
+  - Object loss needs both ends of a connection. With one end, `joined` and
     `negative_hops` are NULL, not 0. A 0 would say that nothing was lost.
   - `lost` and `outside_window` are NULL when nothing joined. Then no window
     tells which objects count as lost.
-- Bitrate: The view counts only payload bytes. An mlog does not log other
+- Object bitrate: The view counts only payload bytes. An mlog does not log other
   sizes. It is not bandwidth: bandwidth is the capacity of a link, and an mlog
   cannot show capacity.
   - `direction` is `created` for the rate that an end sent, and `parsed` for

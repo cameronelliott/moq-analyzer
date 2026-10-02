@@ -3,7 +3,7 @@
 How long the relay holds each object, how steady that time is, and how steady
 delivery is at each subscriber. One dot is one second.
 
-## Dwell and jitter over time
+## Dwell and object jitter over time
 
 The left axis is relay dwell: the mean time from the relay receiving an object
 to sending it to a subscriber, for all subscribers and tracks together.

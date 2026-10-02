@@ -165,9 +165,9 @@ async function load(files: readonly File[]): Promise<void> {
     const latencyPage = latency(legs);
     latencyView.innerHTML = latencyPage.html.text;
     mountCharts(latencyView, latencyPage.charts);
-    throughputView.innerHTML = html`<wa-spinner label="Computing throughput"></wa-spinner>`.text;
+    throughputView.innerHTML = html`<wa-spinner label="Computing object bitrate"></wa-spinner>`.text;
     interarrivalView.innerHTML = html`<wa-spinner label="Computing interarrival"></wa-spinner>`.text;
-    jitterView.innerHTML = html`<wa-spinner label="Computing jitter"></wa-spinner>`.text;
+    jitterView.innerHTML = html`<wa-spinner label="Computing object jitter"></wa-spinner>`.text;
     relayView.innerHTML = html`<wa-spinner label="Computing relay"></wa-spinner>`.text;
     loaded = true;
     captureNav.hidden = false;
@@ -182,7 +182,7 @@ async function load(files: readonly File[]): Promise<void> {
       mountCharts(overviewView, card.charts);
     }
 
-    statusLine.textContent = 'Computing throughput…';
+    statusLine.textContent = 'Computing object bitrate…';
     const bitrateSummary = await capture.objectBitrateSummary();
     const bitrate = throughput(await capture.objectBitrateSeries(), bitrateSummary);
     throughputView.innerHTML = bitrate.html.text;
@@ -197,7 +197,7 @@ async function load(files: readonly File[]): Promise<void> {
     interarrivalView.innerHTML = gaps.html.text;
     mountCharts(interarrivalView, gaps.charts);
 
-    statusLine.textContent = 'Computing jitter…';
+    statusLine.textContent = 'Computing object jitter…';
     const steady = jitter(await capture.jitterSummary(), await capture.jitterSeries());
     jitterView.innerHTML = steady.html.text;
     mountCharts(jitterView, steady.charts);

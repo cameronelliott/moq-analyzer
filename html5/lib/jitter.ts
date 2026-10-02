@@ -1,7 +1,7 @@
 // The Jitter view: pages/jitter.md, with its charts and table from
 // jitterSummary() and jitterSeries(). New in html5: ../html3 had no jitter
-// page. mlog-sql's RFC-3550-explained.md says what the measure is, and asks
-// for the label "transit jitter".
+// page. mlog-sql's RFC-3550-explained.md says what the measure is. The label
+// is "object jitter", as in mlog-sql's MEASURES.md.
 
 import type { EChartsOption } from 'echarts';
 import type { JitterSeriesRow, JitterSummaryRow, LegNo } from 'mlog-sql';

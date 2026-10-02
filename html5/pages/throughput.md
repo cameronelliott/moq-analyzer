@@ -1,4 +1,4 @@
-# Throughput
+# Object bitrate
 
 Payload bits per second: no QUIC or MoQ framing, no retransmissions. This is
 not bandwidth, which is the capacity of a link and which an mlog cannot show.

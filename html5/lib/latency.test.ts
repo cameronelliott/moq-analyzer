@@ -13,7 +13,7 @@ const data = [...rows('aaaaaaaa1111', [75, 0.4, 55.8]), ...rows('bbbbbbbb2222', 
 
 test('the page is the markdown, with every block filled', () => {
   const { text } = latency(data).html;
-  expect(text).toContain('<h1>Latency</h1>');
+  expect(text).toContain('<h1>Object latency</h1>');
   expect(text).not.toMatch(/data-block="[^"]+"><\/div>/);
 });
 

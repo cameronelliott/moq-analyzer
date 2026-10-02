@@ -1,4 +1,4 @@
-# Latency
+# Object latency
 
 Every object that reached a subscriber crossed three legs: into the relay,
 through it, and out to that subscriber.

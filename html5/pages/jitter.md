@@ -1,4 +1,4 @@
-# Transit jitter
+# Object jitter
 
 How steady each leg is. For each object, D is its transit time on a leg minus
 the transit time of the object before it: RFC 3550's D, per object. The charts

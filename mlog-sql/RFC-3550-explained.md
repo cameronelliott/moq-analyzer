@@ -18,4 +18,4 @@ Caveats:
   keyframe/delta boundaries. The view carries object size so charts can split
   by it.
 - RFC's J is a 1/16 EWMA. A windowed mean of |D| is comparable, not identical.
-- Label it "transit jitter (RFC 3550 D, per object)", not "RFC 3550 jitter".
+- Label it "object jitter (RFC 3550 D, per object)", not "RFC 3550 jitter".

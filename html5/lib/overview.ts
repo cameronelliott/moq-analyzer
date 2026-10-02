@@ -59,7 +59,7 @@ const CARDS: readonly CardSpec[] = [
   },
   {
     measure: 'bitrate',
-    title: 'Bitrate',
+    title: 'Object bitrate',
     href: '#throughput',
     about: 'Payload bits per second at a subscriber: no QUIC or MoQ framing, no retransmissions. '
       + 'One sample is one second at one subscriber. The first and last second of each log are partial and left out.',
@@ -166,7 +166,7 @@ function deliveryCard(trust: readonly TrustRow[]): SafeHtml {
     ${head}
     <div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">Not measured</span>
-      <span class="wa-caption-m">Loss needs both ends of a connection, with objects seen at both. No connection in this capture has that.</span>
+      <span class="wa-caption-m">Object loss needs both ends of a connection, with objects seen at both. No connection in this capture has that.</span>
     </div>
   </section>`;
   }
