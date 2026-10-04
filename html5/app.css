@@ -25,7 +25,8 @@ main { padding: var(--wa-space-l); }
 /* Small and quiet: it is there to be glanced at, not read. */
 .engine { display: flex; align-items: center; gap: var(--wa-space-s); font-size: var(--wa-font-size-s); }
 .engine progress { inline-size: 8rem; block-size: 0.4rem; }
-.engine progress[hidden] { display: none; }
+progress[hidden] { display: none; }
+.load-bar { display: block; inline-size: min(24rem, 100%); block-size: 0.4rem; margin-block-end: var(--wa-space-m); }
 
 .showcases { margin-block-start: var(--wa-space-xl); max-inline-size: 65ch; }
 .showcase button { align-self: start; }

@@ -49,6 +49,8 @@
 
   <main>
     <p id="status" role="status"></p>
+    <!-- Shown while mlog-sql loads the files: how much of them it has read. -->
+    <progress id="load-bar" class="load-bar" max="1" value="0" hidden></progress>
 
     <!-- One view shows at a time; the URL hash picks it. -->
     <section data-view="load">

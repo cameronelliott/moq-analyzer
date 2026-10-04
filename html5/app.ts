@@ -14,7 +14,7 @@ import { latency } from './lib/latency';
 import { relay } from './lib/relay';
 import { SHOWCASES, showcaseById, showcaseFiles, type Showcase } from './lib/showcase';
 import { throughput } from './lib/throughput';
-import { tracesFromFiles } from './lib/trace-files';
+import { plainSize, tracesFromFiles } from './lib/trace-files';
 
 // Web Awesome's loader finds components by scanning the document at runtime,
 // which cannot be bundled. Listing them here is what replaces it: these are the
@@ -82,6 +82,7 @@ installSchemeSwitch(element('scheme-switch', HTMLFieldSetElement));
 const dropZone = element('drop-zone', HTMLLabelElement);
 const fileInput = element('file-input', HTMLInputElement);
 const statusLine = element('status', HTMLParagraphElement);
+const loadBar = element('load-bar', HTMLProgressElement);
 const rejectedList = element('rejected', HTMLUListElement);
 const showcaseList = element('showcases', HTMLDivElement);
 const captureNav = element('capture-nav', HTMLDivElement);
@@ -158,7 +159,21 @@ async function load(files: readonly File[]): Promise<void> {
   captureNav.hidden = true;
   show('load');
 
-  const { traces, rejected } = tracesFromFiles(files);
+  // The bar follows the plain bytes mlog-sql has taken from the files, out of
+  // what they all unpack to. It takes a piece only when it is about to load
+  // it, so that is the load's progress. The text changes once per percent,
+  // not once per piece.
+  let read = 0;
+  let bytes = 0;
+  let percent = -1;
+  const { traces, rejected, accepted } = tracesFromFiles(files, (n) => {
+    read += n;
+    const fraction = bytes === 0 ? 0 : Math.min(read / bytes, 1);
+    loadBar.value = fraction;
+    if (Math.floor(100 * fraction) === percent) return;
+    percent = Math.floor(100 * fraction);
+    statusLine.textContent = `Loading ${traces.length} traces… ${percent}%`;
+  });
   rejectedList.innerHTML = html`${rejected.map((r) => html`<li>${r.file}: ${r.reason}</li>`)}`.text;
 
   try {
@@ -167,6 +182,9 @@ async function load(files: readonly File[]): Promise<void> {
       return;
     }
     statusLine.textContent = `Loading ${traces.length} traces…`;
+    bytes = (await Promise.all(accepted.map(plainSize))).reduce((a, b) => a + b, 0);
+    loadBar.value = 0;
+    loadBar.hidden = false;
     await current?.terminate();
     current = undefined;
 
@@ -174,6 +192,7 @@ async function load(files: readonly File[]): Promise<void> {
     // A warm-up that failed (a network blip, say) gets one retry here.
     current = await next.catch(() => browserEngine(showEngine));
     const capture = await openCapture(current.engine, traces);
+    loadBar.hidden = true;
     // One connection, so one query at a time.
     const trust = await capture.trust();
     const legs = await capture.legSummary();
@@ -243,6 +262,7 @@ async function load(files: readonly File[]): Promise<void> {
   } finally {
     // Only after the load: two engines loading at once would double the memory.
     if (traces.length > 0) next = warm();
+    loadBar.hidden = true;
     setBusy(false);
     fileInput.value = '';
   }
