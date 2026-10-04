@@ -3,8 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "rm -rf dist && bun build ./index.html --outdir dist --watch",
-    "build": "rm -rf dist && bun build ./index.html --production --outdir dist",
+    "dev": "rm -rf dist && mkdir dist && cp -r showcase dist/showcase && bun build ./index.html --outdir dist --watch",
+    "build": "rm -rf dist && bun build ./index.html --production --outdir dist && cp -r showcase dist/showcase",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

@@ -22,6 +22,9 @@ main { padding: var(--wa-space-l); }
   background: var(--wa-color-brand-fill-quiet);
 }
 
+.showcases { margin-block-start: var(--wa-space-xl); max-inline-size: 65ch; }
+.showcase button { align-self: start; }
+
 /* wa-prose caps its element at 65ch. Keep that cap on text, and let charts
    and tables use the whole column. marked wraps a lone <app-echart> in a <p>,
    so a paragraph that holds a chart is not text. */

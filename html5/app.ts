@@ -11,6 +11,7 @@ import { interarrival, receivedTracks, type TrackDistribution } from './lib/inte
 import { jitter } from './lib/jitter';
 import { latency } from './lib/latency';
 import { relay } from './lib/relay';
+import { SHOWCASES, showcaseById, showcaseFiles, type Showcase } from './lib/showcase';
 import { throughput } from './lib/throughput';
 import { tracesFromFiles } from './lib/trace-files';
 
@@ -81,6 +82,7 @@ const dropZone = element('drop-zone', HTMLLabelElement);
 const fileInput = element('file-input', HTMLInputElement);
 const statusLine = element('status', HTMLParagraphElement);
 const rejectedList = element('rejected', HTMLUListElement);
+const showcaseList = element('showcases', HTMLDivElement);
 const captureNav = element('capture-nav', HTMLDivElement);
 const overviewView = element('overview', HTMLElement);
 const connectionsView = element('connections', HTMLElement);
@@ -129,10 +131,16 @@ let current: BrowserEngine | undefined;
 let next = warm();
 let busy = false;
 
+/** One load at a time: while one runs, the file input and the sample buttons are off. */
+function setBusy(now: boolean): void {
+  busy = now;
+  fileInput.disabled = now;
+  for (const button of showcaseList.querySelectorAll('button')) button.disabled = now;
+}
+
 async function load(files: readonly File[]): Promise<void> {
   if (busy) return;
-  busy = true;
-  fileInput.disabled = true;
+  setBusy(true);
   loaded = false;
   captureNav.hidden = true;
   show('load');
@@ -222,11 +230,48 @@ async function load(files: readonly File[]): Promise<void> {
   } finally {
     // Only after the load: two engines loading at once would double the memory.
     if (traces.length > 0) next = warm();
-    busy = false;
-    fileInput.disabled = false;
+    setBusy(false);
     fileInput.value = '';
   }
 }
+
+// --- sample captures --------------------------------------------------------
+// A sample is fetched as files and then loaded as dropped files are. The page
+// URL can ask for one: ?showcase=<id> loads it at once, for a link in a talk.
+
+async function loadShowcase(showcase: Showcase): Promise<void> {
+  if (busy) return;
+  setBusy(true);
+  show('load');
+  rejectedList.innerHTML = '';
+  let files: File[];
+  try {
+    statusLine.textContent = `Fetching ${showcase.title}…`;
+    files = await showcaseFiles(showcase, undefined, (done, of) => {
+      statusLine.textContent = `Fetching ${showcase.title}: ${done} of ${of} files…`;
+    });
+  } catch (e) {
+    statusLine.textContent = `Could not fetch ${showcase.title}: ${e instanceof Error ? e.message : String(e)}`;
+    setBusy(false);
+    return;
+  }
+  setBusy(false);
+  await load(files);
+}
+
+showcaseList.insertAdjacentHTML('beforeend', html`${SHOWCASES.map((s) => html`<div class="showcase wa-stack wa-gap-3xs">
+  <button type="button" data-showcase="${s.id}">${s.title}</button>
+  <span class="quiet">${s.about}</span>
+</div>`)}`.text);
+
+showcaseList.addEventListener('click', (event) => {
+  if (!(event.target instanceof HTMLButtonElement)) return;
+  const showcase = showcaseById(event.target.dataset.showcase ?? null);
+  if (showcase) void loadShowcase(showcase);
+});
+
+const asked = showcaseById(new URLSearchParams(location.search).get('showcase'));
+if (asked) void loadShowcase(asked);
 
 fileInput.addEventListener('change', () => {
   void load([...(fileInput.files ?? [])]);
