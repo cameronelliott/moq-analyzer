@@ -7,6 +7,7 @@ import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
 import { engineStatus, type EngineProgress } from './lib/engine-download';
 import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
+import { computeProgress, type ComputeStep } from './lib/compute-steps';
 import { connections } from './lib/connections';
 import { interarrival, receivedTracks, type TrackDistribution } from './lib/interarrival';
 import { jitter } from './lib/jitter';
@@ -192,7 +193,14 @@ async function load(files: readonly File[]): Promise<void> {
     // A warm-up that failed (a network blip, say) gets one retry here.
     current = await next.catch(() => browserEngine(showEngine));
     const capture = await openCapture(current.engine, traces);
-    loadBar.hidden = true;
+    // The files are in. The bar starts again for the queries that fill the
+    // pages: it moves when a step ends, by that step's share of the time.
+    const step = (id: ComputeStep) => {
+      const { text, fraction } = computeProgress(id);
+      statusLine.textContent = text;
+      loadBar.value = fraction;
+    };
+    step('counts');
     // One connection, so one query at a time.
     const trust = await capture.trust();
     const legs = await capture.legSummary();
@@ -216,7 +224,7 @@ async function load(files: readonly File[]): Promise<void> {
     loaded = true;
     captureNav.hidden = false;
     show('overview');
-    statusLine.textContent = 'Computing distributions…';
+    step('distributions');
 
     for (const measure of OVERVIEW_MEASURES) {
       const card = distributionCard(measure, await capture.distribution(measure));
@@ -226,13 +234,13 @@ async function load(files: readonly File[]): Promise<void> {
       mountCharts(overviewView, card.charts);
     }
 
-    statusLine.textContent = 'Computing object bitrate…';
+    step('bitrate');
     const bitrateSummary = await capture.objectBitrateSummary();
     const bitrate = throughput(await capture.objectBitrateSeries(), bitrateSummary);
     throughputView.innerHTML = bitrate.html.text;
     mountCharts(throughputView, bitrate.charts);
 
-    statusLine.textContent = 'Computing interarrival…';
+    step('interarrival');
     const perTrack: TrackDistribution[] = [];
     for (const track of receivedTracks(bitrateSummary)) {
       perTrack.push({ track, d: await capture.distribution('interarrival', track) });
@@ -241,12 +249,12 @@ async function load(files: readonly File[]): Promise<void> {
     interarrivalView.innerHTML = gaps.html.text;
     mountCharts(interarrivalView, gaps.charts);
 
-    statusLine.textContent = 'Computing object jitter…';
+    step('jitter');
     const steady = jitter(await capture.jitterSummary(), await capture.jitterSeries());
     jitterView.innerHTML = steady.html.text;
     mountCharts(jitterView, steady.charts);
 
-    statusLine.textContent = 'Computing relay…';
+    step('relay');
     const relayPage = relay(await capture.relaySeries(), recovery);
     relayView.innerHTML = relayPage.html.text;
     mountCharts(relayView, relayPage.charts);
