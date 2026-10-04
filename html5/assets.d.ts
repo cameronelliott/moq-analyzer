@@ -7,7 +7,9 @@ declare module '*.md' {
 // Files that Bun copies into dist/ on an `import ... with { type: 'file' }`.
 // The import gives the copied file's URL.
 
-declare module '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm' {
+// generated/duckdb-eh.wasm.gz, which `bun run wasm` makes from the package's
+// duckdb-eh.wasm.
+declare module '*.wasm.gz' {
   const url: string;
   export default url;
 }

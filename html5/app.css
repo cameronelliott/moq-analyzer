@@ -22,6 +22,11 @@ main { padding: var(--wa-space-l); }
   background: var(--wa-color-brand-fill-quiet);
 }
 
+/* Small and quiet: it is there to be glanced at, not read. */
+.engine { display: flex; align-items: center; gap: var(--wa-space-s); font-size: var(--wa-font-size-s); }
+.engine progress { inline-size: 8rem; block-size: 0.4rem; }
+.engine progress[hidden] { display: none; }
+
 .showcases { margin-block-start: var(--wa-space-xl); max-inline-size: 65ch; }
 .showcase button { align-self: start; }
 

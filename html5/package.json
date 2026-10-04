@@ -3,8 +3,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "rm -rf dist && mkdir dist && cp -r showcase dist/showcase && bun build ./index.html --outdir dist --watch",
-    "build": "rm -rf dist && bun build ./index.html --production --outdir dist && cp -r showcase dist/showcase",
+    "wasm": "mkdir -p generated && gzip -9 -c node_modules/@duckdb/duckdb-wasm/dist/duckdb-eh.wasm > generated/duckdb-eh.wasm.gz",
+    "dev": "bun run wasm && rm -rf dist && mkdir dist && cp -r showcase dist/showcase && bun build ./index.html --outdir dist --watch",
+    "build": "bun run wasm && rm -rf dist && bun build ./index.html --production --outdir dist && cp -r showcase dist/showcase",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

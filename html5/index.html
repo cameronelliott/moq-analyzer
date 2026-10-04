@@ -57,6 +57,12 @@
         <input id="file-input" type="file" multiple accept=".mlog,.gz">
         <span class="quiet">Names look like <code>&lt;cid&gt;_client.mlog.gz</code> or <code>&lt;cid&gt;_server.mlog</code>.</span>
       </label>
+      <!-- How far along the duckdb engine is: it downloads and starts while
+           the reader picks files. lib/engine-download.ts has the text. -->
+      <p id="engine" class="engine quiet">
+        <span id="engine-text"></span>
+        <progress id="engine-bar" max="1" hidden></progress>
+      </p>
       <ul id="rejected" class="quiet"></ul>
       <!-- app.ts adds one button per sample capture in lib/showcase.ts. -->
       <div id="showcases" class="showcases wa-stack wa-gap-m">

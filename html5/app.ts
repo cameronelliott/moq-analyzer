@@ -4,6 +4,7 @@ import { CaptureError, openCapture } from 'mlog-sql';
 import { mountCharts } from './lib/chart-element';
 import { installSchemeSwitch } from './lib/dark-light-scheme';
 import { browserEngine, type BrowserEngine } from './lib/duckdb-engine';
+import { engineStatus, type EngineProgress } from './lib/engine-download';
 import { html } from './lib/html';
 import { OVERVIEW_MEASURES, cardId, distributionCard, overview } from './lib/overview';
 import { connections } from './lib/connections';
@@ -120,9 +121,21 @@ function show(view: string): void {
 addEventListener('hashchange', route);
 route();
 
-/** Starts an engine. A failure is not reported here: load() awaits it and shows it. */
+const engineText = element('engine-text', HTMLSpanElement);
+const engineBar = element('engine-bar', HTMLProgressElement);
+
+/** The engine line on the load page. A bar with no value shows it is busy. */
+function showEngine(progress: EngineProgress): void {
+  const { text, fraction } = engineStatus(progress);
+  engineText.textContent = text;
+  if (fraction === null) engineBar.removeAttribute('value');
+  else engineBar.value = fraction;
+  engineBar.hidden = progress.stage === 'ready' || progress.stage === 'failed';
+}
+
+/** Starts an engine. The engine line shows a failure; load() awaits it and shows it too. */
 function warm(): Promise<BrowserEngine> {
-  const engine = browserEngine();
+  const engine = browserEngine(showEngine);
   engine.catch(() => {});   // no unhandled rejection before a load awaits it
   return engine;
 }
@@ -159,7 +172,7 @@ async function load(files: readonly File[]): Promise<void> {
 
     const t0 = performance.now();
     // A warm-up that failed (a network blip, say) gets one retry here.
-    current = await next.catch(() => browserEngine());
+    current = await next.catch(() => browserEngine(showEngine));
     const capture = await openCapture(current.engine, traces);
     // One connection, so one query at a time.
     const trust = await capture.trust();
