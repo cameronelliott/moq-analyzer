@@ -64,14 +64,52 @@ CREATE TABLE IF NOT EXISTS trace (
     title          VARCHAR,
     description    VARCHAR,
     vantage_point  VARCHAR,
-    -- NOT NULL is the input contract: without it every wall_time is NULL and a
-    -- chart draws nothing, or worse, draws relative times as if they were wall.
+    -- NOT NULL, so every wall_time has a value. Stock moq-rs writes no
+    -- reference_time; load.sql then stores 2000-01-01 and says so in
+    -- reference_time_source. Times in such a trace are right against each other
+    -- and against no other trace, until recover.sql lines it up with one.
     reference_time TIMESTAMPTZ NOT NULL,
+    --   logged     the header carried it
+    --   none       the header did not; reference_time is the 2000-01-01 stand-in
+    --   recovered  recover.sql moved it to line up with the relay's inbound
+    --              trace; see clock_recovery
+    reference_time_source VARCHAR NOT NULL,
+    --   logged     the stream ids are the ones the log carried
+    --   recovered  a classifier put them back before the load (stock moq-rs
+    --              writes 0 for all); the header then carries
+    --              moq_stream_id_source, and the two counts below
+    stream_id_source      VARCHAR NOT NULL,
+    -- Objects whose recovered stream had a near-equal alternative, and objects
+    -- that could not be placed and were left out. NULL when logged.
+    stream_id_uncertain   INTEGER,
+    stream_id_unresolved  INTEGER,
     time_format    VARCHAR,
     flush_policy   VARCHAR,
     qlog_version   VARCHAR,
     qlog_format    VARCHAR,
     event_schemas  VARCHAR[]
+);
+
+-- One row per trace whose reference_time recover.sql recovered: the relay's
+-- outbound trace `trace_id`, lined up with its inbound trace `in_trace`.
+--
+-- The relay writes both traces from one clock, each counting from its own
+-- open, so the gap between them is a constant. recover.sql takes the smallest
+-- out-minus-in gap over the objects both traces carry as that constant. It is
+-- too large by the fastest real dwell, so every dwell on this trace reads low
+-- by that much and the fastest reads 0. The error is one-sided: a recovered
+-- dwell is never too high. On n1, n4 and real-6pop the fastest dwell is 3 to
+-- 9 us against a median of 77 to 431 us; recovery.test.ts measures it.
+--
+-- matched is the objects both traces carry. near_floor is how many of them
+-- came within 50 us of the smallest gap. One wrongly matched object can set
+-- the floor by itself, and then near_floor is 1 or 2: that is the warning.
+CREATE TABLE IF NOT EXISTS clock_recovery (
+    trace_id   USMALLINT PRIMARY KEY,
+    in_trace   USMALLINT NOT NULL,
+    offset_us  BIGINT NOT NULL,
+    matched    BIGINT NOT NULL,
+    near_floor BIGINT NOT NULL
 );
 
 -- subscribe joined to subscribe_ok, so objects can reach a track name in one hop.
@@ -315,6 +353,11 @@ FROM object;
 -- us is signed on purpose. Negative means the receiver's clock read earlier than
 -- the sender's, i.e. clock error exceeded the real transit -- a finding, not a
 -- row to hide. The six-POP captures give 300,996 hops, none negative.
+--
+-- us is NULL unless both traces logged a reference_time. The two ends are two
+-- hosts, and nothing in the objects can line their clocks up: the smallest gap
+-- would hide the whole path delay. The row stays, because matching an object
+-- at both ends needs no clock, and `trust` counts those.
 CREATE OR REPLACE VIEW hop AS
 SELECT
     ts.cid,
@@ -327,7 +370,8 @@ SELECT
     r.trace_id   AS recv_trace,
     s.wall_time  AS t_send,
     r.wall_time  AS t_recv,
-    datediff('microsecond', s.wall_time, r.wall_time) AS us,
+    CASE WHEN ts.reference_time_source = 'logged' AND tr.reference_time_source = 'logged'
+         THEN datediff('microsecond', s.wall_time, r.wall_time) END AS us,
     s.payload_length
 FROM object s
 JOIN trace ts ON ts.trace_id = s.trace_id
@@ -361,6 +405,10 @@ WHERE s.direction = 'created';
 --
 -- payload_length is the size the relay parsed. It matched the size it created
 -- on all 230,968 pairs in real-6pop.
+--
+-- Only pairs of traces whose clocks line up: both logged a reference_time, or
+-- recover.sql lined the outbound trace up with its inbound one. A recovered
+-- dwell reads low by one constant; see clock_recovery.
 --
 -- On the six-POP captures the median is a sliver, 0.26-0.43 ms, and the mean is
 -- 1.4x to 15x that. Means sum to end-to-end and medians do not, so a per-leg
@@ -415,7 +463,11 @@ LEFT JOIN (
 ) ok ON  ok.trace_id        = o.trace_id
      AND ok.track_namespace = i.track_namespace
      AND ok.track_name      = i.track_name
-WHERE i.direction = 'parsed';
+WHERE i.direction = 'parsed'
+  AND (   (tin.reference_time_source = 'logged' AND tout.reference_time_source = 'logged')
+       OR (tout.reference_time_source = 'recovered'
+           AND EXISTS (SELECT 1 FROM clock_recovery c
+                       WHERE c.trace_id = o.trace_id AND c.in_trace = i.trace_id)));
 
 -- What a chart is allowed to claim, per connection. Everything here is counted
 -- from the mlogs; nothing is inferred.
@@ -452,6 +504,7 @@ win AS (
            min(t_send) AS first_send, max(t_send) AS last_send,
            min(t_recv) AS first_recv, max(t_recv) AS last_recv,
            count(*)                        AS joined,
+           count(us)                       AS timed,
            count(*) FILTER (WHERE us < 0)  AS negative_hops
     FROM hop GROUP BY cid
 ),
@@ -490,7 +543,10 @@ SELECT
       WHERE u.cid = o.cid
         AND NOT (u.wall_time BETWEEN any_value(w.first_send) AND any_value(w.last_send)))
     END                                                               AS outside_window,
+    -- also NULL when objects joined but no hop has a time: the two ends did
+    -- not both log a reference_time, so nothing was compared
     CASE WHEN any_value(e.traces) >= 2
+          AND NOT (coalesce(any_value(w.joined), 0) > 0 AND any_value(w.timed) = 0)
          THEN coalesce(any_value(w.negative_hops), 0) END             AS negative_hops,
     any_value(w.first_send) AS first_send,
     any_value(w.last_send)  AS last_send
@@ -541,6 +597,19 @@ SELECT t.cid,
 FROM trace t
 LEFT JOIN snd s USING (cid)
 GROUP BY t.cid;
+
+-- What was recovered, one row per trace, so a consumer can say which numbers
+-- rest on a recovery and how far to trust it. The sources are the trace's own
+-- columns; clock_matched and clock_near_floor are clock_recovery's, and NULL
+-- unless reference_time_source is `recovered`.
+CREATE OR REPLACE VIEW recovery AS
+SELECT t.cid, t.filename, t.vantage_point,
+       t.stream_id_source, t.stream_id_uncertain, t.stream_id_unresolved,
+       t.reference_time_source,
+       c.matched    AS clock_matched,
+       c.near_floor AS clock_near_floor
+FROM trace t
+LEFT JOIN clock_recovery c USING (trace_id);
 
 -- One row per object per leg: the whole of chart 1. Three rows for each object
 -- that made it to a subscriber -- into the relay, through it, out to that
@@ -598,7 +667,9 @@ path AS (
       AND (h1.cid IS NOT NULL OR NOT EXISTS (SELECT 1 FROM far WHERE far.cid = d.in_cid))
       AND (h3.cid IS NOT NULL OR NOT EXISTS (SELECT 1 FROM far WHERE far.cid = d.out_cid))
 )
--- cid1 and cid3 say a hop matched; us can be NULL on a matched hop, so it cannot.
+-- cid1 and cid3 say a hop matched, for the whole-path rule above. A matched hop
+-- has no us when its two ends did not both log a reference_time, and a leg
+-- with no time is not a row here.
 SELECT out_cid AS sub_cid, in_cid, 2 AS leg_no, 'relay dwell' AS leg,
        track_namespace, track_name, group_id, subgroup_id, object_id,
        t_in AS t_start, t_out AS t_end, us, payload_length
@@ -608,13 +679,13 @@ SELECT out_cid, in_cid, 1, 'pub -> relay',
        track_namespace, track_name, group_id, subgroup_id, object_id,
        t1_send, t1_recv, us1, len1
 FROM path
-WHERE cid1 IS NOT NULL
+WHERE cid1 IS NOT NULL AND us1 IS NOT NULL
 UNION ALL
 SELECT out_cid, in_cid, 3, 'relay -> sub',
        track_namespace, track_name, group_id, subgroup_id, object_id,
        t3_send, t3_recv, us3, len3
 FROM path
-WHERE cid3 IS NOT NULL;
+WHERE cid3 IS NOT NULL AND us3 IS NOT NULL;
 
 -- Latency summary: one row per subscriber and leg, all tracks together, in ms.
 -- Means as well as medians, because per-leg means add up to the end-to-end mean

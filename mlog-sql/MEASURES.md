@@ -51,6 +51,32 @@ A relay operator has only the relay's logs. That gives object bitrate,
 interarrival at the relay, and relay dwell. It does not give object loss or
 the latency of the network legs.
 
+## Recovery
+
+Stock moq-rs writes `stream_id` 0 on every event and writes no
+`reference_time`. `openCapture` recovers what it can. The `recovery` view and
+the `recovery` function tell what was recovered on each trace.
+
+- Stream ids: A classifier puts the objects back on their streams before the
+  load. All measures then work as they do for logged ids. `stream_ids_uncertain`
+  counts the objects that had a second good answer. `stream_ids_unresolved`
+  counts the objects that the classifier could not place. Those objects are in
+  no measure.
+- Reference time: Each trace of the relay counts time from its own start, on
+  one clock. `recover.sql` lines up each outbound trace of the relay with the
+  inbound trace. It uses the fastest object, which then has a dwell of 0.
+- Recovered relay dwell is too low by one constant: the fastest real dwell.
+  It is never too high. The constant is 3 to 9 µs on n1, n4, and real-6pop.
+  `recovery.test.ts` measures it. `RECOVERED_DWELL` gives the range and a note
+  that a page can show.
+- `clock_near_floor` counts the objects within 50 µs of the fastest. If it is
+  1 or 2, one object set the time base alone, and the dwell is not safe to use.
+- A trace with no `reference_time` gives no latency for a network leg and no
+  `negative_hops`. The two ends are two hosts. The fastest object would hide
+  the full delay of the path.
+- A CLI load does not recover stream ids. `load.sql` refuses a stock trace.
+  Run `recover.sql` after the last `load.sql` to recover reference time.
+
 ## Distributions
 
 `distribution(measure, track?)` gives the quantiles and a histogram of one

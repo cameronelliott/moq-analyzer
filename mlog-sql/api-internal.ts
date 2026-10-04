@@ -194,7 +194,7 @@ function checkType(v: unknown, c: Column, fail: (m: string) => CaptureError): st
 
 // The fixed sets the views produce, from schema.sql: the `leg` view's three
 // legs, relay_series's three series, the `direction` ENUM, coverage's sender,
-// and object_bitrate_series's grouping.
+// object_bitrate_series's grouping, and the two source columns of `trace`.
 const LEG_NOS = [1, 2, 3] as const;
 const LEGS = ["pub -> relay", "relay dwell", "relay -> sub"] as const;
 const RELAY_SERIES = ["relay dwell", "relay egress jitter", "subscriber jitter"] as const;
@@ -203,6 +203,22 @@ const SENDERS = ["client", "server", "both"] as const;
 const SCOPES = ["all", "track"] as const;
 const MEASURES = ["end to end", "relay dwell", "interarrival", "bitrate"] as const;
 const UNITS = ["ms", "kbit/s"] as const;
+const STREAM_ID_SOURCES = ["logged", "recovered"] as const;
+const REFERENCE_TIME_SOURCES = ["logged", "recovered", "none"] as const;
+
+// --- recovered dwell --------------------------------------------------------
+
+/** mlog-sql.d.ts documents this. The range is what recovery.test.ts measures
+ *  on the captures that logged a reference_time. */
+export const RECOVERED_DWELL = {
+    typicalErrorUs: { low: 3, high: 9 },
+    note: "These logs carry no reference_time, so relay dwell is measured against the "
+        + "fastest object in the capture: that object reads 0, and every other reads how "
+        + "much longer the relay held it. The error is one-sided. A dwell shown here is "
+        + "never too high, only too low, and by the same constant on every object: the "
+        + "fastest real dwell, typically under 10 µs. Jitter and the shape of the "
+        + "distribution are exact.",
+} as const;
 
 /** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
  *  keep BIGINT out of the rows. api.test.ts DESCRIBEs each one against this. */
@@ -388,6 +404,31 @@ export const QUERIES = {
             client_traces: col("INTEGER", false),
             server_traces: col("INTEGER", false),
             sender: col("VARCHAR", true, SENDERS),   // NULL when no object was logged
+        },
+    },
+    // Per trace: what mlog-sql recovered, and how far to trust it.
+    recovery: {
+        sql: `SELECT cid,
+                     filename                       AS trace,
+                     vantage_point,
+                     stream_id_source               AS stream_ids,
+                     stream_id_uncertain::INTEGER   AS stream_ids_uncertain,
+                     stream_id_unresolved::INTEGER  AS stream_ids_unresolved,
+                     reference_time_source          AS reference_time,
+                     clock_matched::INTEGER         AS clock_matched,
+                     clock_near_floor::INTEGER      AS clock_near_floor
+              FROM recovery
+              ORDER BY cid, vantage_point, filename`,
+        columns: {
+            cid: col("VARCHAR", false),
+            trace: col("VARCHAR", false),
+            vantage_point: col("VARCHAR", true),   // NULL when the header gave none
+            stream_ids: col("VARCHAR", false, STREAM_ID_SOURCES),
+            stream_ids_uncertain: col("INTEGER", true),    // NULL when logged
+            stream_ids_unresolved: col("INTEGER", true),
+            reference_time: col("VARCHAR", false, REFERENCE_TIME_SOURCES),
+            clock_matched: col("INTEGER", true),           // NULL unless recovered
+            clock_near_floor: col("INTEGER", true),
         },
     },
     distributionSummary: {

@@ -239,7 +239,7 @@ describe("contract", () => {
     // package.json "exports" makes api.ts the whole package. Types vanish at
     // runtime, so this pins only the values; a new one must be added here on purpose.
     test("api.ts exports exactly these values", async () => {
-        expect(Object.keys(await import("./api")).sort()).toEqual(["CaptureError", "openCapture"]);
+        expect(Object.keys(await import("./api")).sort()).toEqual(["CaptureError", "RECOVERED_DWELL", "openCapture"]);
     });
 
     for (const [name, spec] of Object.entries(QUERIES)) {

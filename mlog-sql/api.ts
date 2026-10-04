@@ -6,7 +6,8 @@
 //
 // Input is a stream of plain mlog bytes per trace (the caller removes gzip), so
 // a fetch body, a dropped File, a Bun file, or later a WebSocket all fit, and no
-// whole file is ever held in one buffer.
+// whole file is ever held in one buffer. The exception is a trace from stock
+// moq-rs: recovering its stream ids needs the whole trace at once.
 //
 // One capture per engine. The tables belong to the database, and group_id
 // overlaps between runs, so two captures in one database join wrongly without
@@ -14,15 +15,17 @@
 
 import schemaSql from "./schema.sql" with { type: "text" };
 import loadSql from "./load.sql" with { type: "text" };
+import recoverSql from "./recover.sql" with { type: "text" };
 import {
     CaptureError, QUERIES, col, onEngine, pickDistribution, recordChunks, sqlString, validateRows,
     type Columns, type QuerySpec,
 } from "./api-internal";
+import { withStreamIds } from "./recover-stream-ids";
 import type { Capture, CaptureOptions, Conn, Engine, TraceSource } from "./mlog-sql.d.ts";
 
 // The public types are declared once, in the header; api.ts implements them.
 export type * from "./mlog-sql.d.ts";
-export { CaptureError } from "./api-internal";
+export { CaptureError, RECOVERED_DWELL } from "./api-internal";
 
 // --- loading ----------------------------------------------------------------
 
@@ -54,6 +57,17 @@ export async function openCapture(
 
     for (const t of traces) await loadTrace(engine, conn, t, chunkBytes);
 
+    // Lines up the relay's traces that logged no reference_time. It needs
+    // every trace, so it runs once, here.
+    await onEngine(async () => {
+        try {
+            await conn.query(recoverSql);
+        } catch (e) {
+            await conn.query("ROLLBACK").catch(() => undefined);
+            throw e;
+        }
+    });
+
     const run = <C extends Columns>(name: string, spec: QuerySpec<C>) =>
         onEngine(async () => validateRows(name, spec, await conn.query(spec.sql)));
 
@@ -78,6 +92,7 @@ export async function openCapture(
         legSummary: () => run("legSummary", QUERIES.legSummary),
         trust: () => run("trust", QUERIES.trust),
         coverage: () => run("coverage", QUERIES.coverage),
+        recovery: () => run("recovery", QUERIES.recovery),
         jitterSummary: () => run("jitterSummary", QUERIES.jitterSummary),
         jitterSeries: () => run("jitterSeries", QUERIES.jitterSeries),
         relaySeries: () => run("relaySeries", QUERIES.relaySeries),
@@ -99,7 +114,9 @@ async function loadTrace(engine: Engine, conn: Conn, t: TraceSource, chunkBytes:
 
     let chunks = 0;
     try {
-        for await (const bytes of recordChunks(t.stream, chunkBytes)) {
+        // A trace from stock moq-rs has no stream ids. withStreamIds holds such
+        // a trace whole and recovers them; any other trace passes through.
+        for await (const bytes of withStreamIds(recordChunks(t.stream, chunkBytes), chunkBytes)) {
             const src = `mlog-chunk-${bufferSeq++}.jsonl`;
             await engine.registerFileBuffer(src, bytes);
             try {

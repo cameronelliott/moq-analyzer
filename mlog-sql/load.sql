@@ -118,8 +118,18 @@ WHERE headers > 1 AND ids = 1;
 
 -- Only the chunk carrying the mlog header inserts this; the rest are no-ops.
 -- Columns are named rather than positional so trace_id can take its DEFAULT.
+--
+-- Stock moq-rs writes no reference_time and no time_format. Its times are
+-- relative all the same, so the trace gets the 2000-01-01 stand-in and
+-- `relative`, and reference_time_source says `none`. recover.sql, run after the
+-- last load, lines up what it can.
+--
+-- The three moq_stream_id_* keys are not moq-rs's. recover-stream-ids.ts adds
+-- them when it puts stream ids back on a stock trace.
 INSERT INTO trace (cid, filename, loaded_at, title, description, vantage_point,
-                   reference_time, time_format, flush_policy, qlog_version,
+                   reference_time, reference_time_source,
+                   stream_id_source, stream_id_uncertain, stream_id_unresolved,
+                   time_format, flush_policy, qlog_version,
                    qlog_format, event_schemas)
 SELECT
     getvariable('cid'),
@@ -128,8 +138,16 @@ SELECT
     j ->> '$.title',
     j ->> '$.description',
     j ->> '$.trace.vantage_point.type',
-    to_timestamp((j ->> '$.trace.common_fields.reference_time')::DOUBLE / 1000),
-    j ->> '$.trace.common_fields.time_format',
+    coalesce(to_timestamp((j ->> '$.trace.common_fields.reference_time')::DOUBLE / 1000),
+             TIMESTAMPTZ '2000-01-01 00:00:00+00'),
+    CASE WHEN j ->> '$.trace.common_fields.reference_time' IS NULL
+         THEN 'none' ELSE 'logged' END,
+    coalesce(j ->> '$.trace.moq_stream_id_source', 'logged'),
+    (j ->> '$.trace.moq_stream_id_uncertain')::INTEGER,
+    (j ->> '$.trace.moq_stream_id_unresolved')::INTEGER,
+    coalesce(j ->> '$.trace.common_fields.time_format',
+             CASE WHEN j ->> '$.trace.common_fields.reference_time' IS NULL
+                  THEN 'relative' END),
     j ->> '$.trace.moq_rs_flush_policy',
     j ->> '$.qlog_version',
     j ->> '$.qlog_format',

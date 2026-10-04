@@ -2,10 +2,13 @@
 // nothing behind when it does.
 //   bun test
 //
-// Two guards, one fixture each way:
-//   * trace.reference_time is NOT NULL (schema.sql) -- no wall clock, no chart.
-//   * load.sql errors when every subgroup header shares one stream_id --
-//     the stock-moq-rs signature; objects cannot reach a group without it.
+// load.sql errors when every subgroup header shares one stream_id -- the
+// stock-moq-rs signature; objects cannot reach a group without it. openCapture
+// recovers the ids before load.sql sees the trace (recovery.test.ts); a CLI
+// load of a stock trace still stops here.
+//
+// A missing reference_time is not refused: the trace loads and says it has
+// none, and the views that compare two clocks leave it out.
 //
 // fixtures/vanilla-stock.mlog is the first 12 lines of a stock moq-rs relay's
 // server mlog (a1/data/vanilla), verbatim: no common_fields in the header, and
@@ -162,16 +165,38 @@ test("a row cannot land under no trace at all", () => {
     }
 });
 
-test("a header without reference_time is refused", () => {
-    // real stream ids, so only the missing clock can refuse this one
-    const r = loadEvents(header(false), [
-        subgroupHeader(1, 4, 0),
-        object(2, 4, 0),
-        subgroupHeader(3, 8, 1),
-        object(4, 8, 0),
-    ]);
+test("a header without reference_time loads, and the trace says it has none", () => {
+    // distinct stream ids, so the stock-capture guard has nothing to refuse
+    const dir = mkdtempSync(join(tmpdir(), "mlog-noref-"));
+    try {
+        const log = join(dir, "fixture.jsonl");
+        const db = join(dir, "fixture.db");
+        writeFileSync(log, [header(false),
+            subgroupHeader(1, 4, 0), object(2, 4, 0),
+            subgroupHeader(3, 8, 1), object(4, 8, 0),
+        ].map((o) => JSON.stringify(o)).join("\n") + "\n");
+        const r = Bun.spawnSync([
+            "duckdb", db,
+            "-f", join(REPO, "schema.sql"),
+            "-c", `set variable src='${log}';`,
+            "-f", join(REPO, "load.sql"),
+            "-f", join(REPO, "recover.sql"),
+        ]);
+        expect(r.stderr.toString()).toBe("");
 
-    expect(r.ok).toBe(false);
-    expect(r.stderr).toContain("NOT NULL constraint failed: trace.reference_time");
-    nothingLanded(r.counts);
+        const q = Bun.spawnSync(["duckdb", "-json", db, "-c",
+            `select reference_time_source as source, stream_id_source as ids,
+                    time_format, epoch(reference_time)::BIGINT as epoch,
+                    (select count(wall_time) from object) as timed
+             from trace`]);
+        // duckdb -json prints one object per row; the query above fixes its keys
+        expect(JSON.parse(q.stdout.toString()) as unknown).toEqual([{
+            // one trace has nothing to line up with, so recover.sql leaves it
+            source: "none", ids: "logged", time_format: "relative",
+            epoch: 946684800,   // 2000-01-01, the stand-in
+            timed: 2,           // every object still has a wall_time
+        }]);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });

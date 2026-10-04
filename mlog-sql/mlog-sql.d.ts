@@ -19,6 +19,22 @@ export declare function openCapture(
     options?: CaptureOptions,
 ): Promise<Capture>;
 
+/**
+ * What to tell a reader about relay dwell when `recovery()` has a row whose
+ * `reference_time` is `recovered`.
+ *
+ * Stock moq-rs logs no reference_time, so the relay's traces share no time
+ * base. mlog-sql lines them up on the fastest object, which then reads 0. Every
+ * dwell is too low by the fastest real dwell, the same amount on every object,
+ * and never too high. `typicalErrorUs` is the range of that amount, in
+ * microseconds, measured on captures that logged a reference_time. `note` says
+ * the same in words a page can show.
+ */
+export declare const RECOVERED_DWELL: {
+    readonly typicalErrorUs: { readonly low: 3; readonly high: 9 };
+    readonly note: string;
+};
+
 /** Every method throws CaptureError only. */
 export interface Capture {
     /** One track, or every track pooled when `track` is left out. null when
@@ -27,6 +43,7 @@ export interface Capture {
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
     coverage(): Promise<CoverageRow[]>;
+    recovery(): Promise<RecoveryRow[]>;
     jitterSummary(): Promise<JitterSummaryRow[]>;
     jitterSeries(): Promise<JitterSeriesRow[]>;
     relaySeries(): Promise<RelaySeriesRow[]>;
@@ -36,6 +53,7 @@ export interface Capture {
 
 
 // #region what the caller supplies, and the error
+
 
 
 /** One connection. The adapter turns duckdb-wasm's Arrow result into plain
@@ -138,6 +156,38 @@ export interface CoverageRow {
     readonly server_traces: number;
     /** Read from either end. NULL when no object was logged. */
     readonly sender: Sender | null;
+}
+
+/** `recovered`: the log had none (stock moq-rs writes 0), and mlog-sql put them back. */
+export type StreamIdSource = "logged" | "recovered";
+/**
+ * - `logged`: the header carried a reference_time.
+ * - `recovered`: it did not, and this is a relay's outbound trace that mlog-sql
+ *   lined up with the inbound one. Relay dwell on it is as RECOVERED_DWELL says.
+ * - `none`: it did not, and nothing lines this trace up with another. It gives
+ *   bitrate and interarrival, and no dwell and no latency.
+ */
+export type ReferenceTimeSource = "logged" | "recovered" | "none";
+
+/** One trace: what mlog-sql recovered on it, and how far to trust that. */
+export interface RecoveryRow {
+    readonly cid: string;
+    /** TraceSource.name. */
+    readonly trace: string;
+    /** As the log wrote it, unchecked. NULL when the header gave none. */
+    readonly vantage_point: string | null;
+    readonly stream_ids: StreamIdSource;
+    /** Objects placed on a stream where another grouping scored nearly as well. NULL when logged. */
+    readonly stream_ids_uncertain: number | null;
+    /** Objects that could not be placed, and are left out of every measure. NULL when logged. */
+    readonly stream_ids_unresolved: number | null;
+    readonly reference_time: ReferenceTimeSource;
+    /** Objects found in both of the relay's traces. NULL unless `recovered`. */
+    readonly clock_matched: number | null;
+    /** How many of those came within 50 µs of the fastest. A value of 1 or 2
+     *  means one object set the time base alone: do not trust the dwell. NULL as
+     *  `clock_matched`. */
+    readonly clock_near_floor: number | null;
 }
 
 export interface JitterSummaryRow {
