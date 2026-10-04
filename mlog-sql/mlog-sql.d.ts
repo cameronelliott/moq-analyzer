@@ -40,6 +40,14 @@ export interface Capture {
     /** One track, or every track pooled when `track` is left out. null when
      *  there are no samples. */
     distribution(measure: Measure, track?: Track): Promise<Distribution | null>;
+    /**
+     * Runs the pass that every `distribution()` reads from: two queries, the
+     * quantiles and then the bins. `onQuery` is called as each one ends, with
+     * how many are done. `distribution()` runs the pass itself when it has not
+     * run, so call this first only to follow its progress. When the pass has
+     * already run or is running, `onQuery` is not called.
+     */
+    prepareDistributions(onQuery?: (done: number, of: number) => void): Promise<void>;
     legSummary(): Promise<LegSummaryRow[]>;
     trust(): Promise<TrustRow[]>;
     coverage(): Promise<CoverageRow[]>;

@@ -74,21 +74,29 @@ export async function openCapture(
     // Every distribution comes from one pass over the samples, so the first
     // call runs both queries and the rest reuse the rows: the capture does not
     // change after loading. A failed pass is forgotten, so the next call retries.
+    // One after the other, not together: the connection runs one query at a
+    // time, and a caller following progress hears the first end before the
+    // second starts.
+    const runDistributions = async (onQuery: (done: number, of: number) => void) => {
+        const summary = await run("distributionSummary", QUERIES.distributionSummary);
+        onQuery(1, 2);
+        const bins = await run("distributionBin", QUERIES.distributionBin);
+        onQuery(2, 2);
+        return [summary, bins] as const;
+    };
     let distributions: ReturnType<typeof runDistributions> | undefined;
-    const runDistributions = () => Promise.all([
-        run("distributionSummary", QUERIES.distributionSummary),
-        run("distributionBin", QUERIES.distributionBin),
-    ]);
+    const distributionRows = (onQuery: (done: number, of: number) => void = () => {}) =>
+        distributions ??= runDistributions(onQuery).catch((e: unknown) => {
+            distributions = undefined;
+            throw e;
+        });
 
     return {
         distribution: async (measure, track) => {
-            distributions ??= runDistributions().catch((e: unknown) => {
-                distributions = undefined;
-                throw e;
-            });
-            const [summary, bins] = await distributions;
+            const [summary, bins] = await distributionRows();
             return pickDistribution(summary, bins, measure, track);
         },
+        prepareDistributions: async (onQuery) => { await distributionRows(onQuery); },
         legSummary: () => run("legSummary", QUERIES.legSummary),
         trust: () => run("trust", QUERIES.trust),
         coverage: () => run("coverage", QUERIES.coverage),

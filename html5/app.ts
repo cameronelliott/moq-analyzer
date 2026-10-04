@@ -224,7 +224,10 @@ async function load(files: readonly File[]): Promise<void> {
     loaded = true;
     captureNav.hidden = false;
     show('overview');
-    step('distributions');
+    // The distributions are two queries. Running them here, before the cards
+    // ask, lets the bar move when the first one ends.
+    step('quantiles');
+    await capture.prepareDistributions((done) => { if (done === 1) step('bins'); });
 
     for (const measure of OVERVIEW_MEASURES) {
       const card = distributionCard(measure, await capture.distribution(measure));

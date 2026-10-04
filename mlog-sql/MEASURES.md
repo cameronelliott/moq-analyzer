@@ -92,6 +92,10 @@ measure. The views are `distribution_sample`, `distribution_summary`, and
 result has the same size for 4 subscribers or 5,000. The views are the reason:
 a chart with one bar for each subscriber does not scale.
 
+All distributions come from one pass of two queries: first the quantiles, then
+the bins. The first `distribution` call runs the pass. `prepareDistributions`
+runs it too, and tells the caller when each query ends, for a progress bar.
+
 The measures are end to end, relay dwell, interarrival, and bitrate. A bitrate
 sample is one second that one subscriber received. When you do not give a
 track, bitrate uses the `all` second, not the track seconds together. Video

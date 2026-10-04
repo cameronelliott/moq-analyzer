@@ -288,6 +288,47 @@ describe("openCapture", () => {
         }
     });
 
+    test("prepareDistributions runs the two queries in order, once, and reports each", async () => {
+        const { engine, reset } = await nodeEngine();
+        // Every query the capture sends that reads a distribution view.
+        const sent: string[] = [];
+        const watched: Engine = {
+            ...engine,
+            connect: async () => {
+                const conn = await engine.connect();
+                return {
+                    query: (sql) => {
+                        // A SELECT, so the schema that defines the views does not count.
+                        const view = /^\s*SELECT[\s\S]*FROM (distribution_\w+)/.exec(sql)?.[1];
+                        if (view !== undefined) sent.push(view);
+                        return conn.query(sql);
+                    },
+                };
+            },
+        };
+        try {
+            const cap = await openCapture(watched, fixtureSources());
+            const heard: string[] = [];
+            await cap.prepareDistributions((done, of) => heard.push(`${done} of ${of} after ${sent.join("+")}`));
+            // The quantiles are reported before the bins are asked for.
+            expect(heard).toEqual([
+                "1 of 2 after distribution_summary",
+                "2 of 2 after distribution_summary+distribution_bin",
+            ]);
+
+            // Every distribution now comes from those rows: no query is sent.
+            for (const [measure, expected] of EXPECTED_DISTRIBUTIONS) {
+                expect(await cap.distribution(measure)).toEqual(expected);
+            }
+            // A second call has nothing to run, and so nothing to report.
+            await cap.prepareDistributions(() => heard.push("again"));
+            expect(sent).toEqual(["distribution_summary", "distribution_bin"]);
+            expect(heard.length).toBe(2);
+        } finally {
+            reset();
+        }
+    });
+
     test("the relay's traces alone give dwell, and no claim about the far ends", async () => {
         const { engine, reset } = await nodeEngine();
         try {

@@ -10,7 +10,9 @@
 // The text is shown in the status line. Cameron rewrites it; keep it all here.
 export const COMPUTE_STEPS = [
   { id: 'counts', text: 'Counting objects…', seconds: 1.3 },
-  { id: 'distributions', text: 'Computing distributions…', seconds: 5.7 },
+  // mlog-sql's two distribution queries, apart, so the longest step has a midpoint.
+  { id: 'quantiles', text: 'Computing distributions: quantiles…', seconds: 1.9 },
+  { id: 'bins', text: 'Computing distributions: histograms…', seconds: 3.8 },
   { id: 'bitrate', text: 'Computing object bitrate…', seconds: 0.5 },
   { id: 'interarrival', text: 'Computing interarrival…', seconds: 0.1 },
   { id: 'jitter', text: 'Computing object jitter…', seconds: 2.2 },
