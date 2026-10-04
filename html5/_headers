@@ -1,0 +1,15 @@
+# Cloudflare Pages response headers. The build copies this file to dist/.
+#
+# Pages sends every file with max-age=0, so a repeat visit asks about each one
+# again before it uses its copy. Bun puts a content hash in these names, so a
+# file never changes under its name and the browser can keep it for good.
+# index.html and the showcase mlogs have no hash, and keep the default.
+
+/duckdb-eh.wasm-*
+  Cache-Control: public, max-age=31536000, immutable
+
+/duckdb-browser-eh.worker-*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index-*
+  Cache-Control: public, max-age=31536000, immutable
