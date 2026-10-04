@@ -36,6 +36,9 @@ interface CardSpec {
   readonly shown: readonly Quantile[];
   /** What one sample is, plural. */
   readonly samples: string;
+  /** What the number is when no subscriber's log is loaded and mlog-sql
+   *  measured at the relay instead. Only bitrate and interarrival fall back. */
+  readonly atRelay?: string;
 }
 
 // The card text. Cameron rewrites it; keep it all here.
@@ -69,6 +72,7 @@ const CARDS: readonly CardSpec[] = [
     tail: 'p5',
     shown: ['p50', 'p95', 'min'],
     samples: 'seconds',
+    atRelay: 'No subscriber log is loaded. This is what the relay sent to each subscriber.',
   },
   {
     measure: 'interarrival',
@@ -79,6 +83,7 @@ const CARDS: readonly CardSpec[] = [
     tail: 'p99',
     shown: ['p50', 'p95', 'max'],
     samples: 'gaps',
+    atRelay: 'No subscriber log is loaded. These are gaps at the relay, between objects arriving from the publisher.',
   },
 ];
 
@@ -122,6 +127,7 @@ function card(spec: CardSpec, d: Distribution | null | undefined): SafeHtml {
     ? html`<div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">${quantity(d[spec.tail], d.unit)}</span>
       <span class="wa-caption-m">${spec.tail} of ${count(d.n)} ${spec.samples}, every subscriber and track.</span>
+      ${d.measured_at === 'relay' && spec.atRelay ? html`<span class="wa-caption-m">${spec.atRelay}</span>` : null}
     </div>
     <app-echart variant="card" height="150px" data-chart="${id}"></app-echart>
     <dl class="quantiles">${spec.shown.map((q) =>

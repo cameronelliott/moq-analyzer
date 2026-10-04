@@ -23,11 +23,17 @@ export interface TrackDistribution {
 
 const trackName = (t: Track) => `${t.namespace}/${t.name}`;
 
-/** Each track a subscriber received, once, sorted. An init segment (no whole second) is left out. */
+/**
+ * Each track a subscriber received, once, sorted. An init segment (no whole
+ * second) is left out. With no subscriber's log loaded, the tracks the relay
+ * received instead: mlog-sql measures interarrival at the relay then.
+ */
 export function receivedTracks(summary: readonly ObjectBitrateSummaryRow[]): Track[] {
+  const received = summary.filter((r) => r.direction === 'parsed');
+  const end = received.some((r) => r.vantage_point === 'client') ? 'client' : 'server';
   const tracks = new Map<string, Track>();
-  for (const r of summary) {
-    if (r.vantage_point !== 'client' || r.direction !== 'parsed' || r.scope !== 'track' || r.seconds === 0) continue;
+  for (const r of received) {
+    if (r.vantage_point !== end || r.scope !== 'track' || r.seconds === 0) continue;
     if (r.track_namespace === null || r.track_name === null) continue;
     const track = { namespace: r.track_namespace, name: r.track_name };
     tracks.set(trackName(track), track);
@@ -55,8 +61,12 @@ ${d
     : html`<td class="num">0</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>`}</tr>`)}</tbody>
 </table></div>`;
 
+  const note = tracks.some(({ d }) => d?.measured_at === 'relay')
+    ? html`<p class="quiet">No subscriber log is loaded, so these are gaps at the relay, between objects arriving from the publisher.</p>`
+    : html``;
+
   return {
-    html: fillBlocks(PAGE, { 'track-table': trackTable, 'track-charts': trackCharts }),
+    html: fillBlocks(PAGE, { note, 'track-table': trackTable, 'track-charts': trackCharts }),
     charts,
   };
 }

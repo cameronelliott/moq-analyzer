@@ -283,8 +283,22 @@ export interface ObjectBitrateSeriesRow {
  *   one before it on the same track. It includes the publisher's pacing.
  * - `bitrate`: one second of payload that one subscriber received. The first
  *   and last second of each log are partial and left out.
+ *
+ * With no subscriber's log loaded, as for a relay operator, `interarrival` and
+ * `bitrate` come from the relay's logs: see MeasuredAt.
  */
 export type Measure = "end to end" | "relay dwell" | "interarrival" | "bitrate";
+
+/**
+ * Whose log the samples are from. `end to end` is always `subscriber` and
+ * `relay dwell` always `relay`. For the other two:
+ * - `subscriber`: at least one subscriber's log is loaded, and every sample is
+ *   a subscriber's.
+ * - `relay`: none is. `interarrival` is then the gap between objects arriving
+ *   at the relay from the publisher, and `bitrate` is one second of payload
+ *   the relay sent to one subscriber.
+ */
+export type MeasuredAt = "subscriber" | "relay";
 
 /** `ms` for every measure but `bitrate`, which is `kbit/s`. */
 export type Unit = "ms" | "kbit/s";
@@ -304,6 +318,7 @@ export interface Bin {
 export interface Distribution {
     readonly measure: Measure;
     readonly unit: Unit;
+    readonly measured_at: MeasuredAt;
     /** Samples. The bin counts add up to it. */
     readonly n: number;
     readonly min: number;

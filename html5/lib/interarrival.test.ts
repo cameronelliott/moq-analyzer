@@ -9,7 +9,7 @@ const summary = (over: Partial<ObjectBitrateSummaryRow>): ObjectBitrateSummaryRo
 });
 
 const dist: Distribution = {
-  measure: 'interarrival', unit: 'ms', n: 1000,
+  measure: 'interarrival', unit: 'ms', measured_at: 'subscriber', n: 1000,
   min: 0.1, p1: 1, p5: 5, p50: 33.4, p95: 40, p99: 47.3, max: 62.5,
   bins: [{ lo: 0.1, hi: 30, count: 300 }, { lo: 30, hi: 62.5, count: 700 }],
 };
@@ -23,6 +23,22 @@ test('received tracks: each track a subscriber received, once, sorted; no init s
     summary({ scope: 'all', track_namespace: null, track_name: null }),
     summary({ vantage_point: 'server', direction: 'created', track_name: '9.m4s' }),
   ])).toEqual([{ namespace: '/bbb', name: '1.m4s' }, { namespace: '/bbb', name: '2.m4s' }]);
+});
+
+test("received tracks: with no subscriber's log, the tracks the relay received", () => {
+  const relay = { vantage_point: 'server' };
+  expect(receivedTracks([
+    summary({ ...relay, cid: 'pub', track_name: '2.m4s' }),
+    summary({ ...relay, cid: 'pub', track_name: '1.m4s' }),
+    summary({ ...relay, cid: 'sub', direction: 'created', track_name: '9.m4s' }),
+  ])).toEqual([{ namespace: '/bbb', name: '1.m4s' }, { namespace: '/bbb', name: '2.m4s' }]);
+});
+
+test('gaps measured at the relay say so; gaps at a subscriber do not', () => {
+  const track = { namespace: '/bbb', name: '1.m4s' };
+  expect(interarrival([{ track, d: dist }]).html.text).toContain('<div data-block="note"></div>');
+  expect(interarrival([{ track, d: { ...dist, measured_at: 'relay' } }]).html.text)
+    .toContain('these are gaps at the relay');
 });
 
 test('one section and one chart per track; a track with no gaps says so', () => {

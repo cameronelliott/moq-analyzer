@@ -4,6 +4,8 @@ The gap between an object arriving at a subscriber and the one before it on
 the same track, pooled over every subscriber. rtcstats calls this latency. It
 includes the publisher's pacing, so on its own it is not a network measure.
 
+<div data-block="note"></div>
+
 Each track is its own distribution. A gap on one track and a gap on another
 mean different things, and pooled together they blur both.
 

@@ -20,7 +20,7 @@ import {
 } from "@duckdb/duckdb-wasm/blocking";
 import {
     openCapture, CaptureError,
-    type Distribution, type Measure,
+    type Distribution, type Measure, type MeasuredAt,
     type Engine, type TraceSource, type CoverageRow, type LegSummaryRow, type JitterSummaryRow,
     type RelaySeriesRow,
     type JitterSeriesRow, type ObjectBitrateSeriesRow, type ObjectBitrateSummaryRow,
@@ -207,8 +207,11 @@ const EXPECTED_BITRATE_SUMMARY = BITRATE_ENDS.flatMap((e) => SCOPES.map((s): Obj
 // Every sample of a measure is the same value, so every quantile is that value
 // and there is one bin. Bitrate has no interior second, so no samples.
 const TRACK = { namespace: "/bbb", name: "1.m4s" };
-const flat = (measure: Measure, n: number, v: number): Distribution => ({
-    measure, unit: "ms", n,
+const flat = (
+    measure: Measure, n: number, v: number,
+    measured_at: MeasuredAt = measure === "relay dwell" ? "relay" : "subscriber",
+): Distribution => ({
+    measure, unit: "ms", measured_at, n,
     min: v, p1: v, p5: v, p50: v, p95: v, p99: v, max: v,
     bins: [{ lo: v, hi: v, count: n }],
 });
@@ -305,6 +308,11 @@ describe("openCapture", () => {
             ]);
             expect(await cap.distribution("relay dwell")).toEqual(flat("relay dwell", 3, 1));
             expect(await cap.distribution("end to end")).toBeNull();
+            // No subscriber's log, so interarrival is the gap at the relay, on
+            // the publisher's connection, and says so. 60, 70, 80 ms: two gaps.
+            expect(await cap.distribution("interarrival")).toEqual(flat("interarrival", 2, 10, "relay"));
+            expect(await cap.distribution("interarrival", TRACK)).toEqual(flat("interarrival", 2, 10, "relay"));
+            expect(await cap.distribution("bitrate")).toBeNull();   // no interior second
         } finally {
             reset();
         }
@@ -427,7 +435,7 @@ describe("distribution_bin", () => {
             const conn = await engine.connect();
             await conn.query(readFileSync(join(REPO, "schema.sql"), "utf8"));
             await conn.query(`CREATE OR REPLACE VIEW distribution_sample AS
-                SELECT 'relay dwell' AS measure, 'ms' AS unit, 'all' AS scope,
+                SELECT 'relay dwell' AS measure, 'ms' AS unit, 'relay' AS measured_at, 'all' AS scope,
                        NULL::VARCHAR AS track_namespace, NULL::VARCHAR AS track_name,
                        v::DOUBLE AS value
                 FROM (SELECT unnest(range(101)) AS v UNION ALL SELECT 1000)`);
@@ -648,6 +656,9 @@ describe.skipIf(!existsSync(REAL_6POP))("real-6pop", () => {
             expect(dist.get("relay dwell")!.p50).toBeLessThan(1);
             expect(dist.get("bitrate")!.p50).toBeGreaterThan(250);
             expect(dist.get("bitrate")!.p50).toBeLessThan(450);
+            // Subscribers' logs are loaded, so nothing falls back to the relay.
+            expect((["end to end", "relay dwell", "interarrival", "bitrate"] as const).map((m) =>
+                dist.get(m)?.measured_at)).toEqual(["subscriber", "relay", "subscriber", "subscriber"]);
 
             const audit = await (await engine.connect()).query(DUPLICATE_AUDIT);
             expect(audit).toEqual([]);

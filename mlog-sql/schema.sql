@@ -964,39 +964,56 @@ GROUP BY cid, vantage_point, direction, scope, track_namespace, track_name;
 -- bitrate:      one second a subscriber received, without the first and the
 --               last second of its log, as in object_bitrate_summary.
 --
+-- measured_at says whose log a sample is from: `subscriber` or `relay`. End to
+-- end ends at a subscriber, and dwell is the relay's own. Interarrival and
+-- bitrate are a subscriber's when any subscriber's log is loaded. When none
+-- is, as for a relay operator, they fall back to the relay's end of the same
+-- traffic, all or nothing, so one distribution never mixes the two:
+--   interarrival   the gap at the relay, on the publisher's connection
+--                  (vantage `server`, direction `parsed`)
+--   bitrate        one second the relay sent a subscriber (vantage `server`,
+--                  direction `created`)
+--
 -- A sample whose track never resolved is left out of the latency measures;
 -- `leg` drops those already.
 CREATE OR REPLACE VIEW distribution_sample AS
-WITH latency AS (
-    SELECT 'end to end' AS measure, track_namespace, track_name,
+WITH far AS (
+    SELECT CASE WHEN EXISTS (SELECT 1 FROM object o JOIN trace t USING (trace_id)
+                             WHERE t.vantage_point = 'client' AND o.direction = 'parsed')
+                THEN 'subscriber' ELSE 'relay' END AS measured_at
+),
+latency AS (
+    SELECT 'end to end' AS measure, 'subscriber' AS measured_at, track_namespace, track_name,
            sum(us) / 1000 AS value
     FROM leg
     GROUP BY sub_cid, track_namespace, track_name, group_id, subgroup_id, object_id
     HAVING count(*) = 3
     UNION ALL
-    SELECT 'relay dwell', track_namespace, track_name, us / 1000
+    SELECT 'relay dwell', 'relay', track_namespace, track_name, us / 1000
     FROM leg
     WHERE leg_no = 2
     UNION ALL
-    SELECT 'interarrival', track_namespace, track_name, us / 1000
-    FROM interarrival
-    WHERE vantage_point = 'client' AND us IS NOT NULL AND track_name IS NOT NULL
+    SELECT 'interarrival', far.measured_at, track_namespace, track_name, us / 1000
+    FROM interarrival, far
+    WHERE vantage_point = CASE far.measured_at WHEN 'subscriber' THEN 'client' ELSE 'server' END
+      AND us IS NOT NULL AND track_name IS NOT NULL
 ),
 received AS (
-    SELECT *,
+    SELECT s.*, far.measured_at,
            min(sec) OVER w AS first_sec,
            max(sec) OVER w AS last_sec
-    FROM object_bitrate_series
-    WHERE vantage_point = 'client' AND direction = 'parsed'
+    FROM object_bitrate_series s, far
+    WHERE (far.measured_at = 'subscriber' AND vantage_point = 'client' AND direction = 'parsed')
+       OR (far.measured_at = 'relay'      AND vantage_point = 'server' AND direction = 'created')
     WINDOW w AS (PARTITION BY cid, vantage_point, direction)
 )
-SELECT measure, 'ms' AS unit, 'track' AS scope, track_namespace, track_name, value
+SELECT measure, 'ms' AS unit, measured_at, 'track' AS scope, track_namespace, track_name, value
 FROM latency
 UNION ALL
-SELECT measure, 'ms', 'all', NULL, NULL, value
+SELECT measure, 'ms', measured_at, 'all', NULL, NULL, value
 FROM latency
 UNION ALL
-SELECT 'bitrate', 'kbit/s', scope, track_namespace, track_name, kbit_s
+SELECT 'bitrate', 'kbit/s', measured_at, scope, track_namespace, track_name, kbit_s
 FROM received
 WHERE sec > first_sec AND sec < last_sec
   AND (scope = 'all' OR track_name IS NOT NULL);
@@ -1004,7 +1021,7 @@ WHERE sec > first_sec AND sec < last_sec
 -- Distribution summary: one row per measure and track, and one per measure
 -- with every track pooled.
 CREATE OR REPLACE VIEW distribution_summary AS
-SELECT measure, unit, scope, track_namespace, track_name,
+SELECT measure, unit, measured_at, scope, track_namespace, track_name,
        count(*)                     AS n,
        min(value)                   AS min,
        quantile_cont(value, 0.01)   AS p1,

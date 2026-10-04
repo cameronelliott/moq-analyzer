@@ -328,6 +328,21 @@ describe.skipIf(!existsSync(DATA))("against a1/data", () => {
         expect(dwell?.p50).toBeGreaterThan(0.3);
         expect(dwell?.p50).toBeLessThan(0.5);
         expect(await capture.distribution("end to end")).toBeNull();
+        expect(dwell?.measured_at).toBe("relay");
+
+        // A relay operator's logs: bitrate is what the relay sent the
+        // subscriber, and interarrival is the gap at the relay. Both say so.
+        const bitrate = await capture.distribution("bitrate");
+        expect(bitrate?.measured_at).toBe("relay");
+        expect(bitrate?.unit).toBe("kbit/s");
+        // object_bitrate_summary's `all` row for the relay's sending end
+        const sent = (await capture.objectBitrateSummary()).find((r) =>
+            r.vantage_point === "server" && r.direction === "created" && r.scope === "all");
+        expect(bitrate?.n).toBe(sent?.seconds);
+        expect(bitrate?.p50).toBe(sent?.median_kbit_s ?? NaN);
+        const gaps = await capture.distribution("interarrival");
+        expect(gaps?.measured_at).toBe("relay");
+        expect(gaps?.n).toBeGreaterThan(1000);
         expect((await capture.legSummary()).map((l) => l.leg)).toEqual(["relay dwell"]);
         console.log(`vanilla: ${lined?.clock_matched} objects matched,`
             + ` ${lined?.clock_near_floor} within 50 us of the fastest,`

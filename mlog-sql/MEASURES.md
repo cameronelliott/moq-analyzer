@@ -51,6 +51,13 @@ A relay operator has only the relay's logs. That gives object bitrate,
 interarrival at the relay, and relay dwell. It does not give object loss or
 the latency of the network legs.
 
+The interarrival and bitrate distributions use the subscribers' logs when one
+or more is loaded. When none is loaded, they use the relay's logs.
+Interarrival is then the gap at the relay, on the publisher's connection.
+Bitrate is then the rate that the relay sent to each subscriber.
+`measured_at` in the distribution tells which logs it used. One distribution
+never has samples from both.
+
 ## Recovery
 
 Stock moq-rs writes `stream_id` 0 on every event and writes no

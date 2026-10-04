@@ -203,6 +203,7 @@ const SENDERS = ["client", "server", "both"] as const;
 const SCOPES = ["all", "track"] as const;
 const MEASURES = ["end to end", "relay dwell", "interarrival", "bitrate"] as const;
 const UNITS = ["ms", "kbit/s"] as const;
+const MEASURED_AT = ["subscriber", "relay"] as const;
 const STREAM_ID_SOURCES = ["logged", "recovered"] as const;
 const REFERENCE_TIME_SOURCES = ["logged", "recovered", "none"] as const;
 
@@ -434,6 +435,7 @@ export const QUERIES = {
     distributionSummary: {
         sql: `SELECT measure,
                      unit,
+                     measured_at,
                      scope,
                      track_namespace,
                      track_name,
@@ -450,6 +452,7 @@ export const QUERIES = {
         columns: {
             measure: col("VARCHAR", false, MEASURES),
             unit: col("VARCHAR", false, UNITS),
+            measured_at: col("VARCHAR", false, MEASURED_AT),
             scope: col("VARCHAR", false, SCOPES),
             track_namespace: col("VARCHAR", true),   // NULL on `all` rows
             track_name: col("VARCHAR", true),
@@ -508,7 +511,7 @@ export function pickDistribution(
     const s = summary.find(mine);
     if (s === undefined) return null;
     return {
-        measure, unit: s.unit, n: s.n,
+        measure, unit: s.unit, measured_at: s.measured_at, n: s.n,
         min: s.min, p1: s.p1, p5: s.p5, p50: s.p50, p95: s.p95, p99: s.p99, max: s.max,
         bins: bins.filter(mine).map((b) => ({ lo: b.lo, hi: b.hi, count: b.count })),
     };

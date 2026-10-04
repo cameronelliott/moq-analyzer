@@ -5,6 +5,7 @@ import { distributionCard, histogramOption, overview, type OverviewData } from '
 const dist = (measure: Measure, over: Partial<Distribution> = {}): Distribution => ({
   measure,
   unit: measure === 'bitrate' ? 'kbit/s' : 'ms',
+  measured_at: measure === 'relay dwell' ? 'relay' : 'subscriber',
   n: 1000,
   min: 1, p1: 2, p5: 3, p50: 50, p95: 95, p99: 99, max: 120,
   bins: [{ lo: 1, hi: 60, count: 600 }, { lo: 60, hi: 120, count: 400 }],
@@ -34,6 +35,21 @@ test('latency cards lead with p99; bitrate, where low is bad, with p5', () => {
   expect(html.text).toContain('p99 of 1,000 deliveries');
   expect(html.text).toContain('3 kbit/s</span>');
   expect(html.text).toContain('p5 of 1,000 seconds');
+});
+
+test("bitrate and interarrival measured at the relay say so; the subscribers' own do not", () => {
+  expect(overview(data()).html.text).not.toContain('No subscriber log is loaded');
+  const { text } = overview(data({
+    distributions: {
+      ...data().distributions,
+      bitrate: dist('bitrate', { measured_at: 'relay' }),
+      interarrival: dist('interarrival', { measured_at: 'relay' }),
+    },
+  })).html;
+  expect(text).toContain('This is what the relay sent to each subscriber.');
+  expect(text).toContain('These are gaps at the relay, between objects arriving from the publisher.');
+  // Relay dwell is always the relay's, and needs no such line.
+  expect(text.match(/No subscriber log is loaded/g)?.length).toBe(2);
 });
 
 test('one chart per distribution, keyed by the element that shows it', () => {
