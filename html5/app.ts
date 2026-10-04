@@ -21,6 +21,7 @@ import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import { registerIconLibrary } from '@awesome.me/webawesome/dist/components/icon/library.js';
 
 // wa-page draws its mobile menu button with <wa-icon name="bars">, and the
@@ -155,14 +156,17 @@ async function load(files: readonly File[]): Promise<void> {
     // One connection, so one query at a time.
     const trust = await capture.trust();
     const legs = await capture.legSummary();
+    // What mlog-sql recovered on a stock moq-rs capture. The views that show
+    // relay dwell carry its notice.
+    const recovery = await capture.recovery();
 
     // Show the Overview now, with a spinner in each distribution card, and
     // fill the cards in as their queries return.
-    overviewView.innerHTML = overview({ traces: traces.length, trust, distributions: {} }).html.text;
-    const connectionsPage = connections(trust);
+    overviewView.innerHTML = overview({ traces: traces.length, trust, recovery, distributions: {} }).html.text;
+    const connectionsPage = connections(trust, recovery);
     connectionsView.innerHTML = connectionsPage.html.text;
     mountCharts(connectionsView, connectionsPage.charts);
-    const latencyPage = latency(legs);
+    const latencyPage = latency(legs, recovery);
     latencyView.innerHTML = latencyPage.html.text;
     mountCharts(latencyView, latencyPage.charts);
     throughputView.innerHTML = html`<wa-spinner label="Computing object bitrate"></wa-spinner>`.text;
@@ -203,7 +207,7 @@ async function load(files: readonly File[]): Promise<void> {
     mountCharts(jitterView, steady.charts);
 
     statusLine.textContent = 'Computing relay…';
-    const relayPage = relay(await capture.relaySeries());
+    const relayPage = relay(await capture.relaySeries(), recovery);
     relayView.innerHTML = relayPage.html.text;
     mountCharts(relayView, relayPage.charts);
 

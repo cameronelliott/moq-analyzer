@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Leg, LegNo, LegSummaryRow } from 'mlog-sql';
+import type { Leg, LegNo, LegSummaryRow, RecoveryRow } from 'mlog-sql';
 import { latency } from './latency';
 
 const LEGS: [LegNo, Leg][] = [[1, 'pub -> relay'], [2, 'relay dwell'], [3, 'relay -> sub']];
@@ -14,7 +14,23 @@ const data = [...rows('aaaaaaaa1111', [75, 0.4, 55.8]), ...rows('bbbbbbbb2222', 
 test('the page is the markdown, with every block filled', () => {
   const { text } = latency(data).html;
   expect(text).toContain('<h1>Object latency</h1>');
-  expect(text).not.toMatch(/data-block="[^"]+"><\/div>/);
+  // The recovery block is empty by design when every trace logged its clock.
+  expect(text).toContain('<div data-block="recovery"></div>');
+  expect(text.replace('<div data-block="recovery"></div>', '')).not.toMatch(/data-block="[^"]+"><\/div>/);
+});
+
+test('a stock capture gets the recovery notice, and dashes for the network legs', () => {
+  const recovery: RecoveryRow[] = [{
+    cid: 'aaaaaaaa1111', trace: 'a_server.mlog', vantage_point: 'server',
+    stream_ids: 'recovered', stream_ids_uncertain: 0, stream_ids_unresolved: 0,
+    reference_time: 'recovered', clock_matched: 1545, clock_near_floor: 12,
+  }];
+  const dwellOnly = rows('aaaaaaaa1111', [0, 0.4, 0]).filter((r) => r.leg_no === 2);
+  const { text } = latency(dwellOnly, recovery).html;
+  expect(text).toContain('<div data-block="recovery"><wa-callout variant="neutral">');
+  expect(text).toContain('never too high');
+  expect(text).toContain('<td>aaaaaaaa</td><td class="num">—</td><td class="num">0.4</td>'
+    + '<td class="num">—</td><td class="num">—</td>');
 });
 
 test('leg means table: one row per subscriber, end to end is the sum of the means', () => {

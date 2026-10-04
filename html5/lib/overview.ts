@@ -7,14 +7,17 @@
 // element, never written into the markup. mountCharts() joins the two.
 
 import type { EChartsOption } from 'echarts';
-import type { Distribution, Measure, TrustRow } from 'mlog-sql';
+import type { Distribution, Measure, RecoveryRow, TrustRow } from 'mlog-sql';
 import { count, percent, quantity, sig } from './format';
 import { html, type SafeHtml } from './html';
+import { recoveryNotice } from './recovery';
 import type { View } from './view';
 
 export interface OverviewData {
   readonly traces: number;
   readonly trust: readonly TrustRow[];
+  /** What mlog-sql recovered. Left out, or all logged, shows no notice. */
+  readonly recovery?: readonly RecoveryRow[];
   /** A measure left out is still being computed: its card shows a spinner
    *  until distributionCard() replaces it. null means no samples. */
   readonly distributions: Readonly<Partial<Record<Measure, Distribution | null>>>;
@@ -241,6 +244,7 @@ export function overview(data: OverviewData): View {
     ${stat('Connections', count(data.trust.length))}
     ${stat('Hops joined', measured(data.trust, 'joined').length === 0 ? '—' : count(sum(data.trust, 'joined')))}
   </dl>
+  ${recoveryNotice(data.recovery ?? [])}
   <div class="tray wa-grid wa-gap-xs">
     ${CARDS.slice(0, 2).map((spec) => card(spec, data.distributions[spec.measure]))}
     ${deliveryCard(data.trust)}

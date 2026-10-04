@@ -11,6 +11,8 @@ publisher sent. Drag the slider to zoom.
 
 <app-echart data-chart="received" height="380px"></app-echart>
 
+<div data-block="note"></div>
+
 ## One subscriber, each track
 
 <app-echart data-chart="tracks" height="380px"></app-echart>

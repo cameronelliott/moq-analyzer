@@ -3,11 +3,12 @@
 // numbers were dummy data.
 
 import type { EChartsOption } from 'echarts';
-import type { LegNo, LegSummaryRow } from 'mlog-sql';
+import type { LegNo, LegSummaryRow, RecoveryRow } from 'mlog-sql';
 import page from '../pages/latency.md' with { type: 'text' };
 import { ms, shortCid as label } from './format';
 import { html, type SafeHtml } from './html';
 import { fillBlocks, markdown } from './markdown';
+import { recoveryNotice } from './recovery';
 import { legSummaryTable } from './tables';
 import type { View } from './view';
 
@@ -15,7 +16,7 @@ const PAGE = markdown(page);
 
 const LEGS: readonly [LegNo, string][] = [[1, 'pub -> relay'], [2, 'relay dwell'], [3, 'relay -> sub']];
 
-export function latency(rows: readonly LegSummaryRow[]): View {
+export function latency(rows: readonly LegSummaryRow[], recovery: readonly RecoveryRow[] = []): View {
   const subs = [...new Set(rows.map((r) => r.sub_cid))].sort();
   const row = (sub: string, leg: LegNo) => rows.find((r) => r.sub_cid === sub && r.leg_no === leg);
   const mean = (sub: string, leg: LegNo) => row(sub, leg)?.mean_ms ?? null;
@@ -53,7 +54,11 @@ export function latency(rows: readonly LegSummaryRow[]): View {
   };
 
   return {
-    html: fillBlocks(PAGE, { 'leg-means-table': legMeansTable, 'leg-table': legSummaryTable(rows) }),
+    html: fillBlocks(PAGE, {
+      recovery: recoveryNotice(recovery),
+      'leg-means-table': legMeansTable,
+      'leg-table': legSummaryTable(rows),
+    }),
     charts: { 'leg-means': legMeans, dwell },
   };
 }

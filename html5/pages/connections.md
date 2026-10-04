@@ -21,3 +21,12 @@ objects are in the table above.
 A negative hop is an object logged as arriving before it was sent. Only clock
 error makes one. Zero negative hops rules out clock error larger than the
 transit time, and nothing finer.
+
+## Traces
+
+One row for each log file. Stock moq-rs logs no stream ids and no
+reference_time. The analyzer recovers the stream ids, and lines up the relay's
+own traces on the fastest object. The last two columns say how many objects
+that used, and how many came within 50 µs of the fastest.
+
+<div data-block="recovery-table"></div>

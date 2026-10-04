@@ -3,10 +3,11 @@
 // whose numbers were dummy data.
 
 import type { EChartsOption } from 'echarts';
-import type { TrustRow } from 'mlog-sql';
+import type { RecoveryRow, TrustRow } from 'mlog-sql';
 import page from '../pages/connections.md' with { type: 'text' };
 import { shortCid } from './format';
 import { fillBlocks, markdown } from './markdown';
+import { recoveryTable } from './recovery';
 import { trustTable } from './tables';
 import type { View } from './view';
 
@@ -37,9 +38,9 @@ function notJoined(rows: readonly TrustRow[]): EChartsOption {
   };
 }
 
-export function connections(rows: readonly TrustRow[]): View {
+export function connections(rows: readonly TrustRow[], recovery: readonly RecoveryRow[] = []): View {
   return {
-    html: fillBlocks(PAGE, { 'trust-table': trustTable(rows) }),
+    html: fillBlocks(PAGE, { 'trust-table': trustTable(rows), 'recovery-table': recoveryTable(recovery) }),
     charts: { 'not-joined': notJoined(rows) },
   };
 }

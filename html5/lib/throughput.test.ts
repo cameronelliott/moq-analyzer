@@ -34,6 +34,31 @@ test('received chart: one line per subscriber, and the publisher, from the clien
   ]);
 });
 
+test("a relay operator's logs: the relay's ends stand in, and say so", () => {
+  const IN: Key = { ...RELAY, cid: 'pub00000aaaa', direction: 'parsed' };
+  const OUT_VIDEO: Key = { ...RELAY, scope: 'track', track_namespace: '/bbb', track_name: '1.m4s' };
+  const relayOnly = [
+    point(IN, 1, 300), point(IN, 2, 310),
+    point(RELAY, 1, 290), point(RELAY, 2, 305),
+    point(OUT_VIDEO, 1, 200), point(OUT_VIDEO, 2, 210),
+  ];
+  const { charts, html } = throughput(relayOnly, [summary(IN, 334.4), summary(RELAY, 333.2)]);
+  expect(charts.received?.series).toEqual([
+    expect.objectContaining({ name: 'relay received from pub00000', data: [[1, 300], [2, 310]] }),
+    expect.objectContaining({ name: 'relay sent to sub00000', data: [[1, 290], [2, 305]] }),
+  ]);
+  expect(charts.tracks?.series).toEqual([
+    expect.objectContaining({ name: '/bbb/1.m4s', data: [[1, 200], [2, 210]] }),
+  ]);
+  expect(html.text).toContain('<td>pub00000</td><td>relay received</td><td>all</td><td class="num">334</td>');
+  expect(html.text).toContain('<td>sub00000</td><td>relay sent</td><td>all</td><td class="num">333</td>');
+  expect(html.text).toContain('marked relay');
+});
+
+test('with the client ends loaded there is no relay note', () => {
+  expect(throughput(series, [summary(PUB, 1)]).html.text).toContain('<div data-block="note"></div>');
+});
+
 test('tracks chart: one line per track at the first subscriber; a one-second track (an init segment) is no line', () => {
   const { charts } = throughput(series, []);
   expect(charts.tracks?.series).toEqual([
