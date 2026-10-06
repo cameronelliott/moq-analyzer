@@ -11,6 +11,11 @@ wa-page[view='mobile'] { --menu-width: auto; }
 [slot='navigation'] a[aria-current='page'] { font-weight: var(--wa-font-weight-bold); }
 main { padding: var(--wa-space-l); }
 .quiet { color: var(--wa-color-text-quiet); }
+.site-footer {
+  padding: var(--wa-space-m) var(--wa-space-l);
+  font-size: var(--wa-font-size-s);
+  border-block-start: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+}
 
 .drop-zone {
   padding: var(--wa-space-l);
