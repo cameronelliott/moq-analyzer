@@ -6,6 +6,15 @@
 # file never changes under its name and the browser can keep it for good. The
 # duckdb extensions have the duckdb version in their path, and do not change
 # under it either. index.html and the showcase mlogs keep the default.
+#
+# The landing page is a Bun build too: its script, stylesheet and two pictures
+# have a hash in the name.
+
+/index-*
+  Cache-Control: public, max-age=31536000, immutable
+
+/real-6pop-*
+  Cache-Control: public, max-age=31536000, immutable
 
 /app/duckdb-eh.wasm-*
   Cache-Control: public, max-age=31536000, immutable

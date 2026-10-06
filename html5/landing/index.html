@@ -1,0 +1,231 @@
+<!doctype html>
+<!--
+  moqanalyzer.com landing page. `bun run site` in a2/html5 builds it, with Web
+  Awesome from the package, and puts it at the root of a2/site, the folder to
+  upload. The analyzer is in app/ there: the "Open the analyzer" button and the
+  two sample links point to /app/.
+
+  Three things to keep right:
+    1. FORM ENDPOINT: the <form action="..."> below posts to Buttondown
+       (username moqanalyzer). If you rename the Buttondown account, change it here.
+    2. CONTACT ADDRESS: hello@moqanalyzer.com in the "Send me your mlogs"
+       section.
+    3. SCREENSHOT: real-6pop.png is the html3 overview page with real
+       real-6pop numbers (from mlog-sql), cropped; real-6pop-dark.png is the same
+       page in dark mode. The build copies both.
+-->
+<html lang="en" class="wa-theme-default wa-palette-default wa-light wa-cloak">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MoQ Analyzer</title>
+    <!-- The same icon as the analyzer's page (a2/html5/index.html); keep in step. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230071ec'/%3E%3Cg fill='%23fff'%3E%3Crect x='5' y='17' width='4' height='10'/%3E%3Crect x='11' y='9' width='4' height='18'/%3E%3Crect x='17' y='13' width='4' height='14'/%3E%3Crect x='23' y='21' width='4' height='6'/%3E%3C/g%3E%3C/svg%3E" />
+    <meta
+      name="description"
+      content="See where the milliseconds go in a Media over QUIC session. MoQ Analyzer reads mlog files from publishers, relays, and subscribers and shows latency on every leg."
+    />
+    <script>
+      // Follow the system light/dark setting, including a switch while the
+      // page is open (macOS Auto flips at sunset). CSS shows the matching
+      // screenshot from this class.
+      const dark = matchMedia('(prefers-color-scheme: dark)');
+      const applyScheme = () => {
+        const cl = document.documentElement.classList;
+        cl.toggle('wa-dark', dark.matches);
+        cl.toggle('wa-light', !dark.matches);
+      };
+      applyScheme();
+      dark.addEventListener('change', applyScheme);
+    </script>
+    <!-- Web Awesome comes from the bundle, not its CDN: see landing.ts. -->
+    <link rel="stylesheet" href="./landing.css" />
+    <script type="module" src="./landing.ts"></script>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        padding: 0;
+        margin: 0;
+      }
+      wa-page::part(main-content) {
+        padding: 0;
+      }
+      wa-page > main {
+        padding: 0;
+      }
+
+      /* One readable column, shared by header, sections, and footer. */
+      .column {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 72ch;
+        margin-inline: auto;
+        padding-inline: var(--wa-space-l);
+      }
+
+      header[slot='header'] {
+        border-block-end: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+      }
+      .wordmark {
+        font-weight: var(--wa-font-weight-bold);
+        color: var(--wa-color-text-normal);
+        text-decoration: none;
+      }
+
+      .hero {
+        padding-block: var(--wa-space-4xl) var(--wa-space-3xl);
+      }
+      .section {
+        padding-block: var(--wa-space-3xl);
+      }
+      .band {
+        background: var(--wa-color-surface-lowered);
+      }
+
+      .shot {
+        margin: 0;
+      }
+      .shot img {
+        width: 100%;
+        height: auto;
+        border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+        border-radius: var(--wa-border-radius-m);
+      }
+      /* Show the screenshot that matches the page's theme class. */
+      .wa-light .shot-dark,
+      .wa-dark .shot-light {
+        display: none;
+      }
+
+      .signup {
+        max-width: 50ch;
+      }
+      .signup wa-input {
+        flex: 1 1 24ch;
+      }
+
+      footer[slot='footer'] {
+        border-block-start: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+      }
+    </style>
+  </head>
+  <body>
+    <wa-page>
+      <header slot="header" class="column wa-split wa-align-items-center">
+        <a class="wordmark" href="/">MoQ Analyzer</a>
+      </header>
+
+      <main>
+        <section class="hero column wa-stack wa-gap-xl">
+          <h1 class="wa-heading-3xl wa-text-balance">Latency, jitter, loss.<br>What's happening in your MoQ session?</h1>
+          <p class="wa-body-l wa-color-text-quiet">
+            MoQ Analyzer reads the mlog files from your publisher, relay, and subscribers.
+            <br>It reveals metrics like pub to relay latency, intra-relay latency, object loss, jitter, and others.
+            <br>It runs 100% in your browser. Your logs stay on your machine.
+          </p>
+          <div class="wa-stack wa-gap-s">
+            <div class="wa-cluster wa-gap-s">
+              <wa-button href="/app/" variant="brand" size="large">Open the analyzer</wa-button>
+            </div>
+            <p class="wa-body-s wa-color-text-quiet">
+              No logs at hand? Load a sample:
+              <a href="/app/?showcase=real-6pop">six POPs, every log</a> or
+              <a href="/app/?showcase=vanilla">a stock moq-rs relay</a>.
+            </p>
+          </div>
+
+          <form
+            class="signup wa-stack wa-gap-s"
+            action="https://buttondown.com/api/emails/embed-subscribe/moqanalyzer"
+            method="post"
+          >
+            <div class="wa-cluster wa-gap-s wa-align-items-end">
+              <wa-input
+                type="email"
+                name="email"
+                label="Get an email about new releases"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              ></wa-input>
+              <wa-button type="submit" variant="brand">Notify me</wa-button>
+            </div>
+            <p class="wa-caption-s wa-color-text-quiet">Release news only. Unsubscribe any time.</p>
+          </form>
+        </section>
+
+        <section class="band">
+          <div class="section column wa-stack wa-gap-l">
+            <h2 class="wa-heading-xl">From a real capture</h2>
+            <p>
+              One publisher, one relay, and four subscribers, each on its own AWS host. Here's where the time went.
+            </p>
+
+            <figure class="shot wa-stack wa-gap-xs">
+              <!-- Both load lazily, so only the one on screen is downloaded. -->
+              <img
+                class="shot-light"
+                src="real-6pop.png"
+                width="1400"
+                height="1219"
+                loading="lazy"
+                alt="MoQ Analyzer overview of the real-6pop capture: end-to-end latency by leg for four subscribers, relay dwell mean and median, delivery with zero lost, and throughput per track."
+              />
+              <img
+                class="shot-dark"
+                src="real-6pop-dark.png"
+                width="1400"
+                height="1219"
+                loading="lazy"
+                alt="MoQ Analyzer overview of the real-6pop capture: end-to-end latency by leg for four subscribers, relay dwell mean and median, delivery with zero lost, and throughput per track."
+              />
+              <figcaption class="wa-caption-s wa-color-text-quiet">The analyzer's overview of this capture (prototype).</figcaption>
+            </figure>
+
+            <p class="wa-caption-s wa-color-text-quiet">
+              Capture <code>real-6pop</code>, 227,651 object deliveries measured end to end. Clocks synced with chrony. Analyzed
+              2026-09-20.
+            </p>
+          </div>
+        </section>
+
+        <section class="section column wa-stack wa-gap-l">
+          <h2 class="wa-heading-xl">What it needs from your logs</h2>
+          <p>
+            mlog files (qlog-format event logs for MoQT), named <code>&lt;cid&gt;_client.mlog</code> or
+            <code>&lt;cid&gt;_server.mlog</code>, plain or gzipped. Drop in what you have.
+          </p>
+          <ul>
+            <li>
+              <strong>A relay's logs alone</strong> give relay dwell, object bitrate, and interarrival. This works
+              with stock moq-rs: it writes no <code>stream_id</code> and no <code>reference_time</code>, and the
+              analyzer recovers what it needs.
+            </li>
+            <li>
+              <strong>Logs from both ends of a connection</strong> add object loss.
+            </li>
+            <li>
+              <strong>Logs from every host, each with a <code>reference_time</code></strong>, add latency on each
+              network leg and end to end. That needs synced clocks, and a moq-rs build that writes the field.
+            </li>
+          </ul>
+
+          <wa-divider></wa-divider>
+
+          <h2 class="wa-heading-xl">Send me your mlogs</h2>
+          <p>
+            If you run a MoQ relay, publisher, or player, I'd like to test against your captures, including ones that
+            don't load yet. Email
+            <a href="mailto:hello@moqanalyzer.com">hello@moqanalyzer.com</a>.
+          </p>
+        </section>
+      </main>
+
+      <footer slot="footer" class="column wa-cluster wa-gap-xs wa-caption-s wa-color-text-quiet">
+        <span>MoQ Analyzer is open source.</span>
+        <span>Built by Cameron Elliott in Seattle.</span>
+      </footer>
+    </wa-page>
+  </body>
+</html>

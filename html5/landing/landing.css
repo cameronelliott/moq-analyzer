@@ -1,0 +1,3 @@
+/* Web Awesome's styles, from the package. The page's own rules are in the
+   <style> of index.html, next to the markup they style. */
+@import '@awesome.me/webawesome/dist/styles/webawesome.css';

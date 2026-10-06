@@ -40,6 +40,11 @@ test('every hashed file Bun writes is kept for good', () => {
     '/app/index-g7r9v3g3.js',
     '/app/index-a9j37hb7.css',
     '/app/extensions/v1.5.4/wasm_eh/icu.duckdb_extension.wasm',
+    // the landing page's bundle and pictures, at the root
+    '/index-rpzr8vq5.js',
+    '/index-bpne2x1r.css',
+    '/real-6pop-bgvjj1f0.png',
+    '/real-6pop-dark-fh73jkh7.png',
   ]) {
     const hit = rulesFor(path);
     expect([path, hit.length]).toEqual([path, 1]);
@@ -49,8 +54,8 @@ test('every hashed file Bun writes is kept for good', () => {
 
 test('files with no hash in the name keep the default', () => {
   for (const path of [
-    // the landing page and its pictures, at the root
-    '/', '/index.html', '/_headers', '/real-6pop.png',
+    // the landing page, at the root
+    '/', '/index.html', '/_headers',
     // the analyzer's page and its samples
     '/app/', '/app/index.html',
     '/app/showcase/vanilla/8dac41349bb96aebec844f3445be943e_server.mlog.gz',
