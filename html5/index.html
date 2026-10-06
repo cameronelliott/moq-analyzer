@@ -25,6 +25,8 @@
 <wa-page mobile-breakpoint="920">
   <header slot="header" class="wa-split">
     <a class="site-name" href="./">MoQ Analyzer</a>
+    <div class="wa-cluster wa-gap-m wa-align-items-center">
+    <a class="quiet" href="https://github.com/cameronelliott/moq-analyzer">GitHub</a>
     <fieldset id="scheme-switch" class="scheme-switch">
       <legend class="wa-visually-hidden">Color scheme</legend>
       <label id="scheme-light"><input class="wa-visually-hidden" type="radio" name="scheme" value="light"><wa-icon name="sun" label="Light"></wa-icon></label>
@@ -34,6 +36,7 @@
       <wa-tooltip for="scheme-dark">Dark</wa-tooltip>
       <wa-tooltip for="scheme-auto">Auto: follows your system</wa-tooltip>
     </fieldset>
+    </div>
   </header>
 
   <nav slot="navigation" class="wa-stack wa-gap-xs">
