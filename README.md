@@ -8,6 +8,8 @@ It runs in the browser. Your logs stay on your machine.
 - Read about it: <https://moqanalyzer.com/>
 - Contact: <hello@moqanalyzer.com>
 
+The measures come from [`mlog-sql`](mlog-sql/README.md): SQL views on DuckDB, with a typed TypeScript interface. You can use it without the analyzer page, from TypeScript or from the DuckDB command line.
+
 ## What it reads
 
 The analyzer reads mlog files. An mlog file is a qlog-format event log for MoQT, written as RFC 7464 JSON text sequences.
@@ -22,7 +24,7 @@ A file name is `<cid>_client.mlog` or `<cid>_server.mlog`. A file can be plain o
 
 | Directory | Contents |
 | --- | --- |
-| `mlog-sql` | The loader and the SQL views. It loads mlog files into DuckDB and gives typed queries. `MEASURES.md` lists each measure and the reason for it. |
+| [`mlog-sql`](mlog-sql/README.md) | The loader and the SQL views. It loads mlog files into DuckDB and gives typed queries. Its README lists the tables, the views, and the TypeScript interface. |
 | `html5` | The analyzer page and the landing page. It runs `mlog-sql` on duckdb-wasm in a worker. |
 | `csv-dump` | A small command-line consumer of `mlog-sql`. It writes object bitrate as CSV. |
 
