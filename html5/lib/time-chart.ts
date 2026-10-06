@@ -1,8 +1,8 @@
 // A chart over a capture's seconds, for any per-second series, as lines or
 // dots.
 //
-// A run is hundreds of seconds of one-second points, too dense to read whole,
-// so the chart opens on its first tenth and the slider moves the window.
+// A long run is hundreds of seconds of one-second points, too dense to read
+// whole, so the chart opens on its start and the slider moves the window.
 // Legend at the top, slider at the bottom, and the grid clear of both.
 
 import type { EChartsOption, LineSeriesOption, ScatterSeriesOption } from 'echarts';
@@ -37,6 +37,40 @@ export function dots<R extends { readonly t_s: number }>(
   return { name, type: 'scatter', symbolSize: 4, yAxisIndex, data: byTime(rows, value) };
 }
 
+/** A run this long or shorter opens whole. */
+const WHOLE_S = 120;
+/** A longer run opens on this much of its start. */
+const OPENING_S = 60;
+
+/**
+ * The percent of a run of `spanS` seconds that the chart opens on. A short
+ * run opens whole: a tenth of a 20 s stock sample was two seconds. A long run
+ * opens on its first minute, and never on less than a tenth.
+ */
+export function openingWindow(spanS: number): number {
+  if (spanS <= WHOLE_S) return 100;
+  return Math.max(10, (100 * OPENING_S) / spanS);
+}
+
+/** The seconds from the first point of any series to the last. */
+function span(series: readonly TimeSeries[]): number {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const s of series) {
+    // ECharts also takes a typed array here, so index it: it has no iterator
+    const data: ArrayLike<unknown> = s.data ?? [];
+    for (let i = 0; i < data.length; i++) {
+      // line() and dots() write every point as [second, value]
+      const point = data[i];
+      const t: unknown = Array.isArray(point) ? point[0] : undefined;
+      if (typeof t !== 'number') continue;
+      min = Math.min(min, t);
+      max = Math.max(max, t);
+    }
+  }
+  return max >= min ? max - min : 0;
+}
+
 /**
  * `yName` is one axis name, or two for a left and a right axis. The right
  * axis draws no grid lines: two sets at two scales would not line up.
@@ -55,7 +89,8 @@ export function timeChart(yName: string | readonly [string, string], series: Tim
         { type: 'value' as const, name: yName[1], splitLine: { show: false } },
       ]
     : { type: 'value' as const, name: yName };
-  const timeZoom = [{ type: 'slider' as const, bottom: 8, start: 0, end: 10 }, { type: 'inside' as const, start: 0, end: 10 }];
+  const end = openingWindow(span(series));
+  const timeZoom = [{ type: 'slider' as const, bottom: 8, start: 0, end }, { type: 'inside' as const, start: 0, end }];
   return {
     tooltip: { trigger: 'axis' },
     legend: { top: 0 },

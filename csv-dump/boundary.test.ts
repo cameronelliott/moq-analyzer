@@ -4,7 +4,7 @@ import { test, expect } from "bun:test";
 
 test("the package entry gives exactly the public values", async () => {
     const entry = "mlog-sql";
-    expect(Object.keys(await import(entry)).sort()).toEqual(["CaptureError", "openCapture"]);
+    expect(Object.keys(await import(entry)).sort()).toEqual(["CaptureError", "RECOVERED_DWELL", "openCapture"]);
 });
 
 test("internal files are not importable", async () => {

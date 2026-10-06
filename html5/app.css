@@ -25,7 +25,9 @@ main { padding: var(--wa-space-l); }
 /* Small and quiet: it is there to be glanced at, not read. */
 .engine { display: flex; align-items: center; gap: var(--wa-space-s); font-size: var(--wa-font-size-s); }
 .engine progress { inline-size: 8rem; block-size: 0.4rem; }
-progress[hidden] { display: none; }
+/* `hidden` must win over any class that sets display. Web Awesome's wa-stack
+   does, and it showed the capture links in the sidebar before a load. */
+[hidden] { display: none !important; }
 .load-bar { display: block; inline-size: min(24rem, 100%); block-size: 0.4rem; margin-block-end: var(--wa-space-m); }
 
 .showcases { margin-block-start: var(--wa-space-xl); max-inline-size: 65ch; }
