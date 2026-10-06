@@ -1,1 +1,3 @@
 *.csv
+# `bun run site` in html5 writes it: the folder to upload to Cloudflare Pages
+site

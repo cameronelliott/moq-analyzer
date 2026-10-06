@@ -1,6 +1,7 @@
 // _headers is for Cloudflare Pages, and nothing here can ask Pages. This
 // checks what can be checked: the rules cover the names Bun gives the hashed
-// files, and no rule reaches a file that has no hash.
+// files, under /app/ where the site serves the analyzer, and no rule reaches
+// a file that can change under its name.
 
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -34,10 +35,11 @@ const rulesFor = (path: string) => [...RULES.keys()].filter((rule) => matches(ru
 
 test('every hashed file Bun writes is kept for good', () => {
   for (const path of [
-    '/duckdb-eh.wasm-76y4pd11.gz',
-    '/duckdb-browser-eh.worker-9a4pqcrs.js',
-    '/index-g7r9v3g3.js',
-    '/index-a9j37hb7.css',
+    '/app/duckdb-eh.wasm-76y4pd11.gz',
+    '/app/duckdb-browser-eh.worker-9a4pqcrs.js',
+    '/app/index-g7r9v3g3.js',
+    '/app/index-a9j37hb7.css',
+    '/app/extensions/v1.5.4/wasm_eh/icu.duckdb_extension.wasm',
   ]) {
     const hit = rulesFor(path);
     expect([path, hit.length]).toEqual([path, 1]);
@@ -47,8 +49,11 @@ test('every hashed file Bun writes is kept for good', () => {
 
 test('files with no hash in the name keep the default', () => {
   for (const path of [
-    '/', '/index.html', '/_headers',
-    '/showcase/vanilla/8dac41349bb96aebec844f3445be943e_server.mlog.gz',
+    // the landing page and its pictures, at the root
+    '/', '/index.html', '/_headers', '/real-6pop.png',
+    // the analyzer's page and its samples
+    '/app/', '/app/index.html',
+    '/app/showcase/vanilla/8dac41349bb96aebec844f3445be943e_server.mlog.gz',
   ]) {
     expect([path, rulesFor(path)]).toEqual([path, []]);
   }

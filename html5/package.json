@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "wasm": "mkdir -p generated && gzip -9 -c node_modules/@duckdb/duckdb-wasm/dist/duckdb-eh.wasm > generated/duckdb-eh.wasm.gz",
-    "dev": "bun run wasm && rm -rf dist && mkdir dist && cp -r showcase dist/showcase && cp _headers dist/_headers && bun build ./index.html --outdir dist --watch",
-    "build": "bun run wasm && rm -rf dist && bun build ./index.html --production --outdir dist && cp -r showcase dist/showcase && cp _headers dist/_headers",
+    "extensions": "mkdir -p generated/extensions/v1.5.4/wasm_eh && for e in icu json; do [ -f generated/extensions/v1.5.4/wasm_eh/$e.duckdb_extension.wasm ] || curl -fsS -o generated/extensions/v1.5.4/wasm_eh/$e.duckdb_extension.wasm https://extensions.duckdb.org/v1.5.4/wasm_eh/$e.duckdb_extension.wasm || exit 1; done",
+    "dev": "bun run wasm && bun run extensions && rm -rf dist && mkdir dist && cp -r showcase dist/showcase && cp -r generated/extensions dist/extensions && bun build ./index.html --outdir dist --watch",
+    "build": "bun run wasm && bun run extensions && rm -rf dist && bun build ./index.html --production --outdir dist && cp -r showcase dist/showcase && cp -r generated/extensions dist/extensions",
+    "site": "bun run build && rm -rf ../site && mkdir ../site && cp ../../landing/index.html ../../landing/*.png ../site/ && cp -r dist ../site/app && cp _headers ../site/_headers",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

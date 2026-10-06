@@ -46,8 +46,12 @@ export async function browserEngine(onProgress: (p: EngineProgress) => void = ()
     await db.instantiate(url);
     // mlog-sql's schema needs icu and its loader needs json. duckdb-wasm
     // fetches an extension at first use; fetching both now means a load does
-    // not wait for them.
+    // not wait for them. They come from this site, not extensions.duckdb.org:
+    // the build puts them in dist/extensions/, so the analyzer needs no other
+    // host and runs with no network from a local copy. A URL has no quote in
+    // it, so it is safe inside the SQL string.
     const warmup = await db.connect();
+    await warmup.query(`SET custom_extension_repository = '${new URL('./extensions', document.baseURI).href}';`);
     await warmup.query('LOAD icu; LOAD json;');
     await warmup.close();
     onProgress({ stage: 'ready' });

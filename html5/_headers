@@ -1,15 +1,20 @@
-# Cloudflare Pages response headers. The build copies this file to dist/.
+# Cloudflare Pages response headers. `bun run site` puts this file at the root
+# of the folder to upload, next to the landing page; the analyzer is in app/.
 #
 # Pages sends every file with max-age=0, so a repeat visit asks about each one
 # again before it uses its copy. Bun puts a content hash in these names, so a
-# file never changes under its name and the browser can keep it for good.
-# index.html and the showcase mlogs have no hash, and keep the default.
+# file never changes under its name and the browser can keep it for good. The
+# duckdb extensions have the duckdb version in their path, and do not change
+# under it either. index.html and the showcase mlogs keep the default.
 
-/duckdb-eh.wasm-*
+/app/duckdb-eh.wasm-*
   Cache-Control: public, max-age=31536000, immutable
 
-/duckdb-browser-eh.worker-*
+/app/duckdb-browser-eh.worker-*
   Cache-Control: public, max-age=31536000, immutable
 
-/index-*
+/app/index-*
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/extensions/*
   Cache-Control: public, max-age=31536000, immutable
