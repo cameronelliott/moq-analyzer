@@ -20,9 +20,9 @@ const ends = (cids: readonly string[], roles: readonly string[]) =>
 export const SHOWCASES: readonly Showcase[] = [
   {
     id: 'real-6pop',
-    title: 'Six POPs, every log',
-    about: 'One publisher, one relay and four subscribers on six AWS hosts, with both ends of every '
-      + 'connection logged and the clocks held within 10 µs. Every measure has data. 10 files, 8.4 MB.',
+    title: '10 mlog files, pub->relay->4x-subs',
+    about: 'A six host MoQ broadcast. Tokyo is the publisher. Virginia has the relay. '
+      + 'Subscribers in Dublin, Sao Paulo, Mumbai and Sydney. AWS servers. NTP error under 10us, 8.4 MB.',
     files: ends([
       'a5163379d342db3bb2e10e6b3db6b598',
       'c45a526b08ad99ea276b9813b0f66ac5',
@@ -33,8 +33,8 @@ export const SHOWCASES: readonly Showcase[] = [
   },
   {
     id: 'vanilla',
-    title: 'Stock moq-rs, relay logs only',
-    about: 'What a relay operator has: the two logs of a stock moq-rs relay, with no stream ids and no '
+    title: '2 mlog files, rx and tx on the relay: ->relay-> ',
+    about: 'Relay mlog files only. No publisher, no subscriber files. Unfilled(zeros) stream_ids and lacking '
       + 'reference_time. The analyzer recovers both, and shows relay dwell, bitrate and interarrival. '
       + '2 files, 40 KB.',
     files: ends(['8dac41349bb96aebec844f3445be943e', 'c8312b9d942b906545e42f9ab799e22b'], ['server']),

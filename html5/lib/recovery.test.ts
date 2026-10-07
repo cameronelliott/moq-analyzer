@@ -31,7 +31,7 @@ test('a stock capture says what was recovered, with the note from mlog-sql', () 
   expect(text).not.toContain('could not be placed');
   // The note is mlog-sql's, escaped, not retyped here.
   expect(text).toContain(RECOVERED_DWELL.note.slice(0, 40));
-  expect(text).toContain('never too high');
+  expect(text).toContain('lower than actual');
   expect(text).toContain('no latency for the network legs');
   expect(text).not.toContain('variant="warning"');
 });

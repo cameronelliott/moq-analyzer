@@ -20,7 +20,7 @@ export function relay(rows: readonly RelaySeriesRow[], recovery: readonly Recove
   const subs = [...new Set(subscriber.map((r) => r.sub_cid ?? ''))].sort();
   const mean = (r: RelaySeriesRow) => r.mean_ms;
 
-  const chart = timeChart(['relay dwell, ms', 'jitter |D|, ms'], [
+  const chart = timeChart(['relay dwell, ms', 'delay variation, ms'], [
     dots('relay dwell', of('relay dwell'), mean, 0),
     dots('relay egress jitter', of('relay egress jitter'), mean, 1),
     ...subs.map((sub) => dots(shortCid(sub), subscriber.filter((r) => r.sub_cid === sub), mean, 1)),

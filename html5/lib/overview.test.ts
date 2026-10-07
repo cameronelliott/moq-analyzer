@@ -38,7 +38,9 @@ test('latency cards lead with p99; bitrate, where low is bad, with p5', () => {
 });
 
 test("bitrate and interarrival measured at the relay say so; the subscribers' own do not", () => {
-  expect(overview(data()).html.text).not.toContain('No subscriber log is loaded');
+  const own = overview(data()).html.text;
+  expect(own).not.toContain('Relay output rate only.');
+  expect(own).not.toContain('Gaps at the relay');
   const { text } = overview(data({
     distributions: {
       ...data().distributions,
@@ -46,10 +48,9 @@ test("bitrate and interarrival measured at the relay say so; the subscribers' ow
       interarrival: dist('interarrival', { measured_at: 'relay' }),
     },
   })).html;
-  expect(text).toContain('This is what the relay sent to each subscriber.');
-  expect(text).toContain('These are gaps at the relay, between objects arriving from the publisher.');
-  // Relay dwell is always the relay's, and needs no such line.
-  expect(text.match(/No subscriber log is loaded/g)?.length).toBe(2);
+  // Relay dwell is always the relay's, and needs no such line: each shows once.
+  expect(text.match(/Relay output rate only\./g)?.length).toBe(1);
+  expect(text.match(/Gaps at the relay, on objects from the publisher\./g)?.length).toBe(1);
 });
 
 test('one chart per distribution, keyed by the element that shows it', () => {
@@ -63,7 +64,7 @@ test('a measure with no samples says so and draws no chart', () => {
   const { html, charts } = overview(data({
     distributions: { ...data().distributions, interarrival: null },
   }));
-  expect(html.text).toContain('No samples in this capture.');
+  expect(html.text).toContain('Not available: missing pub or sub data.');
   expect(Object.keys(charts).length).toBe(3);
 });
 
@@ -81,7 +82,7 @@ const oneEnd = (cid: string) => trust({
 
 test('delivery with no connection measured says so, and claims no loss', () => {
   const { text } = overview(data({ trust: [oneEnd('c'), oneEnd('d')] })).html;
-  expect(text).toContain('Not measured');
+  expect(text).toContain('Not available: missing pub or sub data.');
   expect(text).not.toContain(' lost</span>');
   expect(text).not.toContain('class="bar"');
 });
@@ -96,15 +97,15 @@ test('delivery sums only the connections it can measure, and counts the rest', (
 test('clocks and hops joined with no connection measured are dashes', () => {
   const { text } = overview(data({ trust: [oneEnd('c')] })).html;
   expect(text).toContain('<dt class="wa-caption-m">Hops joined</dt><dd class="wa-heading-xl">—</dd>');
-  expect(text).not.toContain('rules out clock error');
-  expect(text).toContain('Clock checks need both ends of a connection');
+  expect(text).not.toContain('is not present');
+  expect(text).toContain('Clock check unavailable.');
 });
 
 test('clocks: the no-clock-error sentence only when there are no negative hops', () => {
-  expect(overview(data()).html.text).toContain('rules out clock error');
+  expect(overview(data()).html.text).toContain('Clock-error > transit-time is not present.');
   const bad = overview(data({ trust: [trust({ negative_hops: 3 })] })).html.text;
   expect(bad).toContain('3</span>');
-  expect(bad).not.toContain('rules out clock error');
+  expect(bad).not.toContain('is not present');
 });
 
 test('a distribution not yet computed shows a spinner, no chart, and a slot to fill', () => {

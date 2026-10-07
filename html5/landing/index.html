@@ -131,8 +131,8 @@
             </div>
             <p class="wa-body-s wa-color-text-quiet">
               No logs at hand? Load a sample:
-              <a href="/app/?showcase=real-6pop">six POPs, every log</a> or
-              <a href="/app/?showcase=vanilla">a stock moq-rs relay</a>.
+              <a href="/app/?showcase=real-6pop">10 mlog files all vantages</a>, or
+              <a href="/app/?showcase=vanilla">stock 2 mlog files relay only</a>.
             </p>
           </div>
 
@@ -194,21 +194,15 @@
         <section class="section column wa-stack wa-gap-l">
           <h2 class="wa-heading-xl">What it needs from your logs</h2>
           <p>
-            mlog files (qlog-format event logs for MoQT), named <code>&lt;cid&gt;_client.mlog</code> or
-            <code>&lt;cid&gt;_server.mlog</code>, plain or gzipped. Drop in what you have.
+            mlog files named <code>&lt;cid&gt;_client.mlog</code> or <code>&lt;cid&gt;_server.mlog</code>, plain or
+            gzipped.
           </p>
           <ul>
+            <li><strong>Relay logs alone:</strong> relay dwell, object bitrate, interarrival. Stock moq-rs works.</li>
+            <li><strong>Both ends of a connection:</strong> adds object loss.</li>
             <li>
-              <strong>A relay's logs alone</strong> give relay dwell, object bitrate, and interarrival. This works
-              with stock moq-rs: it writes no <code>stream_id</code> and no <code>reference_time</code>, and the
-              analyzer recovers what it needs.
-            </li>
-            <li>
-              <strong>Logs from both ends of a connection</strong> add object loss.
-            </li>
-            <li>
-              <strong>Logs from every host, each with a <code>reference_time</code></strong>, add latency on each
-              network leg and end to end. That needs synced clocks, and a moq-rs build that writes the field.
+              <strong>Every host, with <code>reference_time</code> and synced clocks:</strong> adds latency per leg
+              and end to end.
             </li>
           </ul>
 

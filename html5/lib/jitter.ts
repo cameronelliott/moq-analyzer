@@ -37,11 +37,11 @@ export function jitter(summary: readonly JitterSummaryRow[], series: readonly Ji
     .map((sub) => line(shortCid(sub), lastMile.filter((r) => r.sub_cid === sub), (r) => r.mean_ms)));
 
   const rows = [...summary].sort((a, b) => a.sub_cid.localeCompare(b.sub_cid) || a.leg_no - b.leg_no);
-  // Significant digits, not one decimal: a mean |D| is often under 0.15 ms,
+  // Significant digits, not one decimal: a mean delay variation is often under 0.15 ms,
   // and one decimal would print every subscriber as 0.1.
   const cell = (n: number) => html`<td class="num">${sig(n)}</td>`;
   const summaryTable = html`<div class="table-scroll"><table>
-<thead><tr><th>subscriber</th><th>leg</th><th class="num">objects</th><th class="num">mean |D|</th><th class="num">p95</th><th class="num">p99</th><th class="num">max</th></tr></thead>
+<thead><tr><th>subscriber</th><th>leg</th><th class="num">objects</th><th class="num">mean</th><th class="num">p95</th><th class="num">p99</th><th class="num">max</th></tr></thead>
 <tbody>${rows.map((r) => html`<tr><td>${shortCid(r.sub_cid)}</td><td>${r.leg}</td><td class="num">${count(r.n)}</td>${[
     r.mean_ms, r.p95_ms, r.p99_ms, r.max_ms,
   ].map(cell)}</tr>`)}</tbody>

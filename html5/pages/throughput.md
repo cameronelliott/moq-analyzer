@@ -1,13 +1,9 @@
 # Object bitrate
 
-Payload bits per second: no QUIC or MoQ framing, no retransmissions. This is
-not bandwidth, which is the capacity of a link and which an mlog cannot show.
-A second with no object has no point rather than a zero.
 
-## Every subscriber
 
-What each subscriber received, all tracks together, next to what the
-publisher sent. Drag the slider to zoom.
+## Each subscriber and the start-publisher
+
 
 <app-echart data-chart="received" height="380px"></app-echart>
 

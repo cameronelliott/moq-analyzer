@@ -1,24 +1,21 @@
 # Object jitter
 
-How steady each leg is. For each object, D is its transit time on a leg minus
-the transit time of the object before it: RFC 3550's D, per object. The charts
-show |D|, so 0 means this object took exactly as long as the one before.
+Delay variation is how much longer or shorter one object took on a leg than
+the object before it. It is always shown as a positive number, in ms. 0 means
+the two took the same time.
 
-A constant clock offset between two ends cancels in D, so this needs no clock
-sync. Retransmits, flow control and head-of-line blocking all land in D: this
-is the object delivery jitter a player sees, not IP packet jitter, which an
-mlog cannot show.
+It needs no clock sync, because a constant offset between two clocks cancels.
 
 ## Per leg
 
-The mean |D| of each leg, for each subscriber.
+The mean delay variation of each leg, for each subscriber.
 
 <app-echart data-chart="leg-means" height="300px"></app-echart>
 
 ## Over time
 
-The mean |D| of each second on the relay → subscriber leg. Drag the slider to
-zoom.
+The mean delay variation of each second on the relay → subscriber leg. Drag
+the slider to zoom.
 
 <app-echart data-chart="series" height="380px"></app-echart>
 
@@ -30,7 +27,7 @@ In ms.
 
 ## Reading it
 
-- A keyframe takes longer to send than the objects around it, so D jumps
-  where a keyframe starts and ends.
-- RFC 3550's J is a running 1/16 average. A mean of |D| is comparable to it,
-  not the same.
+- A keyframe is much larger than the frames around it and takes longer to
+  deliver. Expect a spike at each keyframe. It is not a network problem.
+- These numbers will not match the jitter that RTP tools report. RTP jitter
+  (RFC 3550) is smoothed over many packets. This is a plain average.

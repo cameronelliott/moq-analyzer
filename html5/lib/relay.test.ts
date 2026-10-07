@@ -23,7 +23,7 @@ test('one chart, dots only: dwell on the left axis, the jitters on the right', (
   // Both axes are ms, at two scales, so each names what it shows.
   expect(option?.yAxis).toEqual([
     expect.objectContaining({ name: 'relay dwell, ms' }),
-    expect.objectContaining({ name: 'jitter |D|, ms' }),
+    expect.objectContaining({ name: 'delay variation, ms' }),
   ]);
   expect(JSON.stringify(option)).not.toContain('"line"');
 });

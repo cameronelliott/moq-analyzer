@@ -28,7 +28,7 @@ test('a stock capture gets the recovery notice, and dashes for the network legs'
   const dwellOnly = rows('aaaaaaaa1111', [0, 0.4, 0]).filter((r) => r.leg_no === 2);
   const { text } = latency(dwellOnly, recovery).html;
   expect(text).toContain('<div data-block="recovery"><wa-callout variant="neutral">');
-  expect(text).toContain('never too high');
+  expect(text).toContain('lower than actual');
   expect(text).toContain('<td>aaaaaaaa</td><td class="num">—</td><td class="num">0.4</td>'
     + '<td class="num">—</td><td class="num">—</td>');
 });

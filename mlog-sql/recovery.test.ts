@@ -266,8 +266,8 @@ describe("withStreamIds", () => {
 });
 
 test("RECOVERED_DWELL says the error is one-sided and gives its range", () => {
-    expect(RECOVERED_DWELL.note).toContain("never too high");
-    expect(RECOVERED_DWELL.note).toContain("under 10 µs");
+    expect(RECOVERED_DWELL.note).toContain("lower than actual");
+    expect(RECOVERED_DWELL.note).toContain("under 10 microseconds");
     // The range the measurement below prints, over n1, n4 and real-6pop.
     expect(RECOVERED_DWELL.typicalErrorUs).toEqual({ low: 3, high: 9 });
 });

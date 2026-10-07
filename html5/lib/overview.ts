@@ -45,10 +45,9 @@ interface CardSpec {
 const CARDS: readonly CardSpec[] = [
   {
     measure: 'end to end',
-    title: 'End to end',
+    title: 'Start-pub to end-sub',
     href: '#latency',
-    about: 'Time from the publisher creating an object to a subscriber parsing it, across all three legs. '
-      + 'One delivery is one object reaching one subscriber. Held objects are left out.',
+    about: 'Delay between start-pub object creation and end-sub object parsing.',
     tail: 'p99',
     shown: ['p50', 'p95', 'max'],
     samples: 'deliveries',
@@ -57,8 +56,7 @@ const CARDS: readonly CardSpec[] = [
     measure: 'relay dwell',
     title: 'Relay dwell',
     href: '#latency',
-    about: 'Time an object spends inside the relay, from arriving to being sent on to one subscriber. '
-      + 'Held objects are left out.',
+    about: 'Time between relay object parse and object creation.',
     tail: 'p99',
     shown: ['p50', 'p95', 'max'],
     samples: 'sends',
@@ -67,30 +65,26 @@ const CARDS: readonly CardSpec[] = [
     measure: 'bitrate',
     title: 'Object bitrate',
     href: '#throughput',
-    about: 'Payload bits per second at a subscriber: no QUIC or MoQ framing, no retransmissions. '
-      + 'One sample is one second at one subscriber. The first and last second of each log are partial and left out.',
+    about: 'Payload bits per second at a subscriber.',
     tail: 'p5',
     shown: ['p50', 'p95', 'min'],
     samples: 'seconds',
-    atRelay: 'No subscriber log is loaded. This is what the relay sent to each subscriber.',
+    atRelay: 'Relay output rate only.',
   },
   {
     measure: 'interarrival',
-    title: 'Interarrival',
+    title: 'Object Interarrival',
     href: '#interarrival',
-    about: 'Gap between an object arriving at a subscriber and the one before it on the same track. '
-      + "It includes the publisher's pacing. rtcstats calls this latency; webrtc-internals calls it jitter.",
+    about: 'Gap between an object arriving at a subscriber and the one before it on the same track.',
     tail: 'p99',
     shown: ['p50', 'p95', 'max'],
     samples: 'gaps',
-    atRelay: 'No subscriber log is loaded. These are gaps at the relay, between objects arriving from the publisher.',
+    atRelay: 'Gaps at the relay, on objects from the publisher.',
   },
 ];
 
-const DELIVERY_ABOUT = 'An object is lost only if both ends were still logging when it was sent. '
-  + "One sent after a subscriber's log stopped is outside the window, not lost.";
-const CLOCKS_ABOUT = 'A negative hop is an object logged as arriving before it was sent. '
-  + 'Only clock error makes one.';
+const DELIVERY_ABOUT = 'Objects are only counted as lost during subscriber mlog output.';
+const CLOCKS_ABOUT = 'A negative hop is an object logged as arriving before it was sent.';
 
 /** The id a measure's card and chart share. */
 export const cardId = (measure: Measure): string => measure.replaceAll(' ', '-');
@@ -126,13 +120,13 @@ function card(spec: CardSpec, d: Distribution | null | undefined): SafeHtml {
     : d
     ? html`<div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">${quantity(d[spec.tail], d.unit)}</span>
-      <span class="wa-caption-m">${spec.tail} of ${count(d.n)} ${spec.samples}, every subscriber and track.</span>
+      <span class="wa-caption-m">${spec.tail} of ${count(d.n)} ${spec.samples}, for all subs, all tracks.</span>
       ${d.measured_at === 'relay' && spec.atRelay ? html`<span class="wa-caption-m">${spec.atRelay}</span>` : null}
     </div>
     <app-echart variant="card" height="150px" data-chart="${id}"></app-echart>
     <dl class="quantiles">${spec.shown.map((q) =>
       html`<div><dt>${q}</dt><dd>${quantity(d[q], d.unit)}</dd></div>`)}</dl>`
-    : html`<p class="wa-body-s">No samples in this capture.</p>`;
+    : html`<span class="wa-caption-m">Not available: missing pub or sub data.</span>`;
   return html`<section class="card wa-stack" data-card="${id}">${cardHead(id, spec.title, spec.about, spec.href)}${body}</section>`;
 }
 
@@ -169,13 +163,12 @@ const connections = (n: number) => `${count(n)} connection${n === 1 ? '' : 's'}`
 function deliveryCard(trust: readonly TrustRow[]): SafeHtml {
   // lost and outside_window are NULL together, and joined is set wherever they are
   const rows = measured(trust, 'lost');
-  const head = cardHead('delivery', 'Delivery', DELIVERY_ABOUT, '#connections');
+  const head = cardHead('delivery', 'Object Loss', DELIVERY_ABOUT, '#connections');
   if (rows.length === 0) {
     return html`<section class="card wa-stack">
     ${head}
     <div class="wa-stack wa-gap-3xs">
-      <span class="wa-heading-xl">Not measured</span>
-      <span class="wa-caption-m">Object loss needs both ends of a connection, with objects seen at both. No connection in this capture has that.</span>
+      <span class="wa-caption-m">Not available: missing pub or sub data.</span>
     </div>
   </section>`;
   }
@@ -209,13 +202,13 @@ function deliveryCard(trust: readonly TrustRow[]): SafeHtml {
 
 function clocksCard(trust: readonly TrustRow[]): SafeHtml {
   const rows = measured(trust, 'negative_hops');
-  const head = cardHead('clocks', 'Clocks', CLOCKS_ABOUT, '#connections');
+  const head = cardHead('clocks', 'Clock consistency check', CLOCKS_ABOUT, '#connections');
   if (rows.length === 0) {
     return html`<section class="card wa-stack">
     ${head}
     <div class="wa-stack wa-gap-3xs">
       <span class="wa-heading-xl">—</span>
-      <span class="wa-caption-m">Clock checks need both ends of a connection. No connection in this capture has both.</span>
+      <span class="wa-caption-m">Clock check unavailable.</span>
     </div>
   </section>`;
   }
@@ -227,7 +220,7 @@ function clocksCard(trust: readonly TrustRow[]): SafeHtml {
       <span class="wa-caption-m">negative hops in ${count(sum(rows, 'joined'))} joined.</span>
     </div>
     ${negative === 0
-      ? html`<p class="wa-body-s">That rules out clock error larger than the transit time, and nothing finer.</p>`
+      ? html`<p class="wa-body-s">Clock-error > transit-time is not present.</p>`
       : null}
   </section>`;
 }

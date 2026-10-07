@@ -213,12 +213,11 @@ const REFERENCE_TIME_SOURCES = ["logged", "recovered", "none"] as const;
  *  on the captures that logged a reference_time. */
 export const RECOVERED_DWELL = {
     typicalErrorUs: { low: 3, high: 9 },
-    note: "These logs carry no reference_time, so relay dwell is measured against the "
-        + "fastest object in the capture: that object reads 0, and every other reads how "
-        + "much longer the relay held it. The error is one-sided. A dwell shown here is "
-        + "never too high, only too low, and by the same constant on every object: the "
-        + "fastest real dwell, typically under 10 µs. Jitter and the shape of the "
-        + "distribution are exact.",
+    note: "These logs lack reference_time, so the time offset between mlog files is estimated. "
+        + "It's estimated by finding the object that transited the relay in the least amount of time. "
+        + "That means relay-dwell figures here are lower than actual. "
+        + "But! from my limited testing, that error is under 10 microseconds. "
+        + "Jitter and other figures should be correct.",
 } as const;
 
 /** Every query api.ts runs, with the exact columns it returns. Casts in the SQL
