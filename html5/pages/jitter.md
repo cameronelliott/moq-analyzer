@@ -12,7 +12,7 @@ The mean delay variation of each leg, for each subscriber.
 
 <app-echart data-chart="leg-means" height="300px"></app-echart>
 
-## Over time
+## Jitter or delay variation over time
 
 The mean delay variation of each second on the relay → subscriber leg. Drag
 the slider to zoom.
