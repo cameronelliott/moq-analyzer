@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { tooltipValue } from './format';
 import { CARD, CARD_DARK, PROSE_GRID, assertRegistered, seriesTypesOf, withDefaults } from './chart-option';
 
 test('prose is the default variant', () => {
@@ -55,4 +56,13 @@ test('a series type the build lacks throws, naming it', () => {
   const registered = new Set(['bar', 'line']);
   expect(() => assertRegistered({ series: [{ type: 'line' }] }, registered)).not.toThrow();
   expect(() => assertRegistered({ series: [{ type: 'pie' }] }, registered)).toThrow('pie');
+});
+
+test('a tooltip prints its values short, unless the option formats them itself', () => {
+  const option = withDefaults({ tooltip: { trigger: 'axis' } });
+  expect(option.tooltip).toEqual({ trigger: 'axis', valueFormatter: tooltipValue });
+  const own = (): string => 'x';
+  expect(withDefaults({ tooltip: { valueFormatter: own } }).tooltip).toEqual({ valueFormatter: own });
+  // an option with no tooltip gets none
+  expect(withDefaults({}).tooltip).toBeUndefined();
 });

@@ -20,6 +20,22 @@ export const sig = (n: number): string => SIG.format(n);
 /** A headline number and its unit: 25 ms. */
 export const quantity = (n: number, unit: string): string => `${sig(n)} ${unit}`;
 
+/**
+ * A value in a chart tooltip. ECharts prints a number in full, as
+ * 0.13505479452054794. This gives three significant digits, and a number of
+ * 100 or more as a whole number, so a count keeps every digit. A point prints
+ * each of its numbers. `value` is unknown because ECharts passes whatever the
+ * series holds.
+ */
+export function tooltipValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(tooltipValue).join(', ');
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return '—';
+    return Math.abs(value) >= 100 ? count(value) : sig(value);
+  }
+  return value === null || value === undefined ? '—' : String(value);
+}
+
 /** A connection by the start of its cid. A manifest will give names later. */
 export const shortCid = (cid: string): string => cid.slice(0, 8);
 

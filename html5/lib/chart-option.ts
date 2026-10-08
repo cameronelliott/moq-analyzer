@@ -1,10 +1,11 @@
 // Chart options: the page defaults and the series-type check. From
 // ../html3/lib/chart-option.js, less the config-string parser.
 //
-// Imports types only, and touches no DOM: an option in, an option out. That
-// keeps it usable at build time if static pages come back.
+// Imports types and the number formats only, and touches no DOM: an option in,
+// an option out. That keeps it usable at build time if static pages come back.
 
 import type { EChartsOption } from 'echarts';
+import { tooltipValue } from './format';
 
 /** The chart element's tag. */
 export const CHART_TAG = 'app-echart';
@@ -87,10 +88,16 @@ export function withDefaults(
       `unknown chart variant: ${variant}. Known: ${Object.keys(VARIANTS).join(', ')}.`);
   }
   const { grid, ...defaults } = { ...VARIANTS[variant], ...(dark ? DARK[variant] : undefined) };
+  // ECharts prints a tooltip number in full. Every chart with a tooltip gets
+  // the short form, unless its option formats the value itself.
+  const tooltip = option.tooltip === undefined || Array.isArray(option.tooltip)
+    ? option.tooltip
+    : { valueFormatter: tooltipValue, ...option.tooltip };
   return {
     backgroundColor: 'transparent',
     ...defaults,
     ...option,
+    ...(tooltip === undefined ? {} : { tooltip }),
     // A shallow spread would drop the grid defaults the moment an option set
     // any grid key of its own, so merge that one level deliberately.
     grid: Array.isArray(option.grid)
